@@ -281,13 +281,23 @@ $form.addEventListener('submit', async (e) => {
         let ev;
         try { ev = JSON.parse(line.slice(6)); } catch { continue; }
 
+        // Remove o "typing" assim que qualquer evento real chega
+        const typing = bubble.querySelector('.typing');
+        if (typing && ev.type !== 'meta') typing.remove();
+
         if (ev.type === 'meta') {
           currentConvId = ev.conversation_id;
           if (ev.is_new) loadConversations();
         } else if (ev.type === 'text') {
-          if (bubble.querySelector('.typing')) bubble.innerHTML = '';
           buf += ev.text;
-          bubble.innerHTML = marked.parse(buf);
+          // Re-renderiza so o texto, mantendo tools/links
+          let textBlock = bubble.querySelector('.text-block');
+          if (!textBlock) {
+            textBlock = document.createElement('div');
+            textBlock.className = 'text-block';
+            bubble.insertBefore(textBlock, bubble.firstChild);
+          }
+          textBlock.innerHTML = marked.parse(buf);
         } else if (ev.type === 'tool_call') {
           tools.push(ev.name);
           $status.textContent = `Executando ${ev.name}...`;
@@ -298,7 +308,21 @@ $form.addEventListener('submit', async (e) => {
           reportLinks.push(ev.data);
           appendReportLink(bubble, ev.data);
         } else if (ev.type === 'error') {
-          bubble.innerHTML = `<span class="error">Erro: ${escapeHtml(ev.error)}</span>`;
+          // Sempre adiciona o erro sem remover conteudo anterior (ex.: tool chips)
+          const errDiv = document.createElement('div');
+          errDiv.className = 'error';
+          // Extrai mensagem amigavel do erro do Google/OpenAI/etc
+          let friendlyMsg = ev.error;
+          if (/RESOURCE_EXHAUSTED|429|quota/i.test(ev.error)) {
+            const m = ev.error.match(/retry in ([\d.]+)s/);
+            const retry = m ? ` (tente em ${Math.ceil(parseFloat(m[1]))}s)` : '';
+            friendlyMsg = `Limite de uso da IA atingido${retry}. Troque de modelo/provider nas configuracoes.`;
+          } else if (ev.error.length > 300) {
+            friendlyMsg = ev.error.slice(0, 300) + '...';
+          }
+          errDiv.innerHTML = `⚠ ${escapeHtml(friendlyMsg)}`;
+          bubble.appendChild(errDiv);
+          $status.textContent = 'erro';
         } else if (ev.type === 'done') {
           $status.textContent = '';
         }

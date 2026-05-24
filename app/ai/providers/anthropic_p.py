@@ -60,33 +60,20 @@ class AnthropicProvider:
 
         try:
             async with self.client.messages.stream(**kwargs) as stream:
-                current_tool: dict | None = None
-                tool_input_json = ""
-                async for event in stream:
-                    et = type(event).__name__
-                    if et == "RawContentBlockStartEvent":
-                        cb = event.content_block
-                        if cb.type == "tool_use":
-                            current_tool = {"id": cb.id, "name": cb.name}
-                            tool_input_json = ""
-                    elif et == "RawContentBlockDeltaEvent":
-                        d = event.delta
-                        if d.type == "text_delta":
-                            yield StreamChunk(type="text", text=d.text)
-                        elif d.type == "input_json_delta":
-                            tool_input_json += d.partial_json
-                    elif et == "RawContentBlockStopEvent":
-                        if current_tool:
-                            import json
-                            try:
-                                args = json.loads(tool_input_json) if tool_input_json else {}
-                            except json.JSONDecodeError:
-                                args = {}
-                            yield StreamChunk(type="tool_call", tool_call=ToolCall(
-                                id=current_tool["id"], name=current_tool["name"], arguments=args,
-                            ))
-                            current_tool = None
-                            tool_input_json = ""
+                # Stream incremental de texto (poupa latencia percebida)
+                async for text_chunk in stream.text_stream:
+                    if text_chunk:
+                        yield StreamChunk(type="text", text=text_chunk)
+
+                # Apos terminar o stream, extrai blocos de tool_use da mensagem final
+                final_msg = await stream.get_final_message()
+                for block in final_msg.content:
+                    if getattr(block, "type", None) == "tool_use":
+                        yield StreamChunk(type="tool_call", tool_call=ToolCall(
+                            id=block.id,
+                            name=block.name,
+                            arguments=block.input if isinstance(block.input, dict) else {},
+                        ))
             yield StreamChunk(type="done")
         except Exception as e:
             yield StreamChunk(type="error", error=str(e))

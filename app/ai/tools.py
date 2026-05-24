@@ -46,6 +46,73 @@ def _parse_when(when: str) -> int:
     return date_to_ms(when)
 
 
+# Cache curto de devices por plataforma (resolucao name->label)
+_DEVICES_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_DEVICES_TTL_S = 60  # 1 minuto
+
+
+async def _get_devices_cached(platform: str) -> list[dict]:
+    import time
+    now = time.time()
+    if platform in _DEVICES_CACHE:
+        ts, devs = _DEVICES_CACHE[platform]
+        if now - ts < _DEVICES_TTL_S:
+            return devs
+    c = _client(platform)
+    devs = await c.list_devices()
+    _DEVICES_CACHE[platform] = (now, devs)
+    return devs
+
+
+async def _resolve_device(platform: str, device_input: str) -> str:
+    """Recebe nome amigavel ou label, retorna o label real.
+    Faz match exato no label primeiro, depois match no name (case-insensitive,
+    com normalizacao de espacos). Levanta erro com sugestoes se nao achar."""
+    if not device_input:
+        raise ValueError("Dispositivo nao informado")
+
+    devices = await _get_devices_cached(platform)
+    if not devices:
+        raise ValueError(f"Nenhum dispositivo encontrado na plataforma '{platform}'")
+
+    raw = device_input.strip()
+    norm = raw.lower().replace(" ", "").replace("-", "").replace("_", "")
+
+    # 1) match exato no label
+    for d in devices:
+        if d.get("label") == raw:
+            return raw
+
+    # 2) match case-insensitive no label
+    for d in devices:
+        if (d.get("label") or "").lower() == raw.lower():
+            return d["label"]
+
+    # 3) match normalizado (ignora espacos/hifen/underscore) - label OU name
+    for d in devices:
+        for field in (d.get("label"), d.get("name")):
+            if not field:
+                continue
+            fnorm = field.lower().replace(" ", "").replace("-", "").replace("_", "")
+            if fnorm == norm:
+                return d["label"]
+
+    # 4) match por substring no name
+    matches = [d for d in devices if (d.get("name") or "").lower().find(raw.lower()) >= 0]
+    if len(matches) == 1:
+        return matches[0]["label"]
+    if len(matches) > 1:
+        sug = ", ".join(f"{m['label']} ({m.get('name', '')})" for m in matches[:5])
+        raise ValueError(f"'{raw}' eh ambiguo. Encontrei varios: {sug}. Use o label exato.")
+
+    # nao achou - retornar sugestoes
+    sample = ", ".join(f"{d['label']} ({d.get('name', '')})" for d in devices[:8])
+    raise ValueError(
+        f"Dispositivo '{raw}' nao encontrado na plataforma '{platform}'. "
+        f"Dispositivos disponiveis (amostra): {sample}. Total: {len(devices)}."
+    )
+
+
 # ---------- Tools ----------
 async def t_list_platforms(**_) -> dict:
     return {"platforms": [{"id": p["id"], "label": p["label"]} for p in PLATFORMS]}
@@ -65,6 +132,8 @@ async def t_list_groups(platform: str, **_) -> dict:
 
 async def t_list_variables(platform: str, device: str | None = None, group: str | None = None, **_) -> dict:
     c = _client(platform)
+    if device:
+        device = await _resolve_device(platform, device)
     vars_ = await c.list_variables(device_label=device or None, group_label=group or None)
     seen = set()
     uniq = []
@@ -79,6 +148,7 @@ async def t_list_variables(platform: str, device: str | None = None, group: str 
 
 async def t_summarize_variable(platform: str, device: str, variable: str,
                                  start: str, end: str, **_) -> dict:
+    device = await _resolve_device(platform, device)
     c = _client(platform)
     sms, ems = _parse_when(start), _parse_when(end)
     points = await c.get_values(device, variable, sms, ems)
@@ -115,6 +185,7 @@ async def t_summarize_variable(platform: str, device: str, variable: str,
 async def t_compute_oee(platform: str, device: str, variable: str,
                          start: str, end: str, ciclo_ideal: float,
                          refugo: int = 0, outlier_factor: float = 3.0, **_) -> dict:
+    device = await _resolve_device(platform, device)
     c = _client(platform)
     sms, ems = _parse_when(start), _parse_when(end)
     points = await c.get_values(device, variable, sms, ems)
@@ -138,16 +209,18 @@ async def t_compare_devices(platform: str, devices: list[str], variable: str,
     sms, ems = _parse_when(start), _parse_when(end)
     transform = get_transform(platform, variable)
     results = []
-    for dev in devices:
+    for dev_input in devices:
         try:
+            dev = await _resolve_device(platform, dev_input)
             points = await c.get_values(dev, variable, sms, ems)
         except Exception as e:
-            results.append({"device": dev, "error": str(e)})
+            results.append({"device": dev_input, "error": str(e)})
             continue
         valores = [apply_value(p.value, transform) for p in points
                    if isinstance(p.value, (int, float)) and not isinstance(p.value, bool)]
         results.append({
             "device": dev,
+            "input_received": dev_input,
             "count": len(points),
             "min": min(valores) if valores else None,
             "max": max(valores) if valores else None,
