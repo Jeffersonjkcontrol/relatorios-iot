@@ -1,0 +1,51 @@
+# Python embarcado local (NAO copiar - imagem usa python:3.12-slim oficial)
+python_runtime/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Dados persistentes (montar via volume)
+output/
+ai_history.db
+ai_history.db-*
+
+# Ambiente local
+.env
+.venv/
+venv/
+
+# Editores / IDE
+.vscode/
+.idea/
+*.swp
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentacao (nao necessaria no runtime)
+README.md
+README-DEPLOY.md
+*.md
+
+# CI
+.github/
+.git/
+.gitignore
+
+# Docker meta (nao precisa dentro da imagem)
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# Tests, examples
+tests/
+examples/
+
+# Scripts Windows nao-funcionais em container
+run.bat
+*.exe

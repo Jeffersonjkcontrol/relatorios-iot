@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block title %}IA{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Analise com IA</h1>
+  <p>Pergunte em portugues sobre OEE, ciclos, comparacoes entre maquinas. A IA consulta a API e responde.</p>
+</div>
+
+{% if not ai_providers %}
+  <div class="card warnings">
+    <strong>Nenhum provider de IA configurado.</strong>
+    <p style="margin: 8px 0 0;">Edite o arquivo <code>.env</code> e adicione ao menos uma chave:</p>
+    <ul style="margin-top: 6px;">
+      <li><code>ANTHROPIC_API_KEY=sk-ant-...</code> (Claude)</li>
+      <li><code>OPENAI_API_KEY=sk-...</code> (GPT)</li>
+      <li><code>GOOGLE_API_KEY=AIza...</code> (Gemini - tem free tier)</li>
+      <li><code>OLLAMA_BASE_URL=http://localhost:11434</code> (local)</li>
+    </ul>
+    <p style="margin-top: 6px;">Depois reinicie o servidor (feche o terminal do <code>run.bat</code> e execute de novo).</p>
+  </div>
+{% else %}
+<div class="chat-layout">
+  <aside class="chat-sidebar">
+    <div class="chat-sidebar-head">
+      <button type="button" class="btn-primary" id="btn-new-chat" style="width:100%;">+ Nova conversa</button>
+    </div>
+    <ul class="conv-list" id="conv-list"></ul>
+  </aside>
+
+  <section class="chat-main">
+    <div class="chat-toolbar">
+      <label>
+        Provider
+        <select id="provider-sel"></select>
+      </label>
+      <label>
+        Modelo
+        <select id="model-sel"></select>
+      </label>
+      <span class="chat-status" id="chat-status"></span>
+    </div>
+
+    <div class="chat-messages" id="chat-messages">
+      <div class="chat-empty">
+        <p>Exemplos de perguntas:</p>
+        <ul>
+          <li>"Liste as injetoras do grupo injetoras_injequaly"</li>
+          <li>"Resumo de ciclo da inj82 nas ultimas 24h"</li>
+          <li>"Calcule o OEE da inj82 hoje, ciclo ideal 45s, sem refugo"</li>
+          <li>"Compare ciclo medio das inj81 e inj82 esta semana"</li>
+          <li>"Gere PDF de OEE da inj82 ontem"</li>
+        </ul>
+      </div>
+    </div>
+
+    <form class="chat-input-row" id="chat-form">
+      <textarea id="chat-input" rows="2" placeholder="Pergunte sobre seus dados... (Shift+Enter para nova linha)"></textarea>
+      <button type="submit" class="btn-primary" id="btn-send">Enviar</button>
+    </form>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if ai_providers %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+const PROVIDERS = {{ ai_providers | tojson }};
+const { jget } = window.app;
+
+const $providerSel = document.getElementById('provider-sel');
+const $modelSel = document.getElementById('model-sel');
+const $convList = document.getElementById('conv-list');
+const $messages = document.getElementById('chat-messages');
+const $input = document.getElementById('chat-input');
+const $form = document.getElementById('chat-form');
+const $btnSend = document.getElementById('btn-send');
+const $btnNew = document.getElementById('btn-new-chat');
+const $status = document.getElementById('chat-status');
+
+let currentConvId = null;
+
+// ----- Provider/model -----
+PROVIDERS.forEach(p => {
+  const o = document.createElement('option');
+  o.value = p.id; o.textContent = p.label;
+  $providerSel.appendChild(o);
+});
+
+function refreshModels() {
+  const p = PROVIDERS.find(x => x.id === $providerSel.value);
+  $modelSel.innerHTML = '';
+  if (!p) return;
+  p.models.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m; o.textContent = m;
+    if (m === p.default_model) o.selected = true;
+    $modelSel.appendChild(o);
+  });
+}
+$providerSel.addEventListener('change', refreshModels);
+
+// Restaura escolha
+const savedProv = localStorage.getItem('ai_provider');
+const savedModel = localStorage.getItem('ai_model');
+if (savedProv && PROVIDERS.some(p => p.id === savedProv)) $providerSel.value = savedProv;
+refreshModels();
+if (savedModel) $modelSel.value = savedModel;
+$providerSel.addEventListener('change', () => localStorage.setItem('ai_provider', $providerSel.value));
+$modelSel.addEventListener('change', () => localStorage.setItem('ai_model', $modelSel.value));
+
+// ----- Conversation list -----
+async function loadConversations() {
+  try {
+    const list = await jget('/api/ai/conversations');
+    $convList.innerHTML = list.map(c => `
+      <li class="conv-item ${c.id === currentConvId ? 'active' : ''}" data-id="${c.id}">
+        <button class="conv-open" data-id="${c.id}" title="${c.title}">
+          <span class="conv-title">${c.title}</span>
+          <span class="conv-meta">${c.provider} · ${new Date(c.updated_at*1000).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'})}</span>
+        </button>
+        <button class="conv-del" data-id="${c.id}" title="Excluir">×</button>
+      </li>
+    `).join('') || '<li class="empty">Sem conversas ainda</li>';
+  } catch (e) {
+    $convList.innerHTML = `<li class="empty">erro: ${e.message}</li>`;
+  }
+}
+
+$convList.addEventListener('click', async (e) => {
+  const open = e.target.closest('.conv-open');
+  const del = e.target.closest('.conv-del');
+  if (open) {
+    openConversation(open.dataset.id);
+  } else if (del) {
+    if (!confirm('Excluir esta conversa?')) return;
+    await fetch(`/api/ai/conversations/${del.dataset.id}`, { method: 'DELETE' });
+    if (currentConvId === del.dataset.id) {
+      currentConvId = null;
+      resetMessages();
+    }
+    loadConversations();
+  }
+});
+
+async function openConversation(id) {
+  currentConvId = id;
+  const conv = await jget(`/api/ai/conversations/${id}`);
+  $providerSel.value = conv.provider;
+  refreshModels();
+  $modelSel.value = conv.model;
+  resetMessages();
+  // Re-renderiza historico
+  for (const m of conv.messages) {
+    if (m.role === 'user') {
+      addMessage('user', m.content);
+    } else if (m.role === 'assistant') {
+      // m.content eh lista de eventos do turno
+      renderAssistantTurn(m.content);
+    }
+  }
+  loadConversations();
+}
+
+$btnNew.addEventListener('click', () => {
+  currentConvId = null;
+  resetMessages();
+  $input.focus();
+  loadConversations();
+});
+
+// ----- Messages render -----
+function resetMessages() {
+  $messages.innerHTML = '';
+}
+
+function addMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = `msg msg-${role}`;
+  div.innerHTML = `<div class="msg-bubble">${role === 'user' ? escapeHtml(text) : marked.parse(text || '')}</div>`;
+  $messages.appendChild(div);
+  $messages.scrollTop = $messages.scrollHeight;
+  return div;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+function renderAssistantTurn(events) {
+  // Re-cria a UI a partir dos eventos salvos
+  let text = '';
+  const toolUses = [];
+  const links = [];
+  for (const e of events) {
+    if (e.type === 'text') text += e.text;
+    else if (e.type === 'tool_call') toolUses.push({name: e.name, args: e.arguments});
+    else if (e.type === 'report_link') links.push(e.data);
+  }
+  const msg = addMessage('assistant', text);
+  if (toolUses.length) {
+    const tools = document.createElement('div');
+    tools.className = 'msg-tools';
+    tools.innerHTML = toolUses.map(t => `<span class="tool-chip">⚙ ${t.name}</span>`).join(' ');
+    msg.querySelector('.msg-bubble').appendChild(tools);
+  }
+  for (const l of links) appendReportLink(msg.querySelector('.msg-bubble'), l);
+}
+
+function appendReportLink(container, data) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-secondary report-btn';
+  btn.textContent = data.label || 'Baixar relatorio';
+  btn.addEventListener('click', () => {
+    const f = document.createElement('form');
+    f.method = data.method || 'POST';
+    f.action = data.url;
+    f.target = '_blank';
+    for (const [k, v] of Object.entries(data.params || {})) {
+      const i = document.createElement('input');
+      i.type = 'hidden'; i.name = k; i.value = v;
+      f.appendChild(i);
+    }
+    document.body.appendChild(f);
+    f.submit();
+    document.body.removeChild(f);
+  });
+  container.appendChild(btn);
+}
+
+// ----- Send message -----
+$form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $input.value.trim();
+  if (!text) return;
+  $input.value = '';
+  $btnSend.disabled = true;
+  $status.textContent = '';
+
+  // Remove o "empty hint" se existir
+  const empty = $messages.querySelector('.chat-empty');
+  if (empty) empty.remove();
+
+  addMessage('user', text);
+  const assistantMsg = addMessage('assistant', '');
+  const bubble = assistantMsg.querySelector('.msg-bubble');
+  bubble.innerHTML = '<span class="typing">●●●</span>';
+
+  let buf = '';
+  const tools = [];
+  const reportLinks = [];
+
+  try {
+    const r = await fetch('/api/ai/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        provider: $providerSel.value,
+        model: $modelSel.value,
+        message: text,
+        conversation_id: currentConvId,
+      }),
+    });
+    if (!r.ok) throw new Error((await r.text()) || r.statusText);
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let leftover = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      leftover += decoder.decode(value, { stream: true });
+      const lines = leftover.split('\n');
+      leftover = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (ev.type === 'meta') {
+          currentConvId = ev.conversation_id;
+          if (ev.is_new) loadConversations();
+        } else if (ev.type === 'text') {
+          if (bubble.querySelector('.typing')) bubble.innerHTML = '';
+          buf += ev.text;
+          bubble.innerHTML = marked.parse(buf);
+        } else if (ev.type === 'tool_call') {
+          tools.push(ev.name);
+          $status.textContent = `Executando ${ev.name}...`;
+          renderTools(bubble, tools);
+        } else if (ev.type === 'tool_result') {
+          $status.textContent = `${ev.name} ok`;
+        } else if (ev.type === 'report_link') {
+          reportLinks.push(ev.data);
+          appendReportLink(bubble, ev.data);
+        } else if (ev.type === 'error') {
+          bubble.innerHTML = `<span class="error">Erro: ${escapeHtml(ev.error)}</span>`;
+        } else if (ev.type === 'done') {
+          $status.textContent = '';
+        }
+        $messages.scrollTop = $messages.scrollHeight;
+      }
+    }
+  } catch (err) {
+    bubble.innerHTML = `<span class="error">Erro: ${escapeHtml(err.message)}</span>`;
+  } finally {
+    $btnSend.disabled = false;
+    $input.focus();
+  }
+});
+
+function renderTools(bubble, tools) {
+  let el = bubble.querySelector('.msg-tools');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'msg-tools';
+    bubble.appendChild(el);
+  }
+  el.innerHTML = tools.map(t => `<span class="tool-chip">⚙ ${t}</span>`).join(' ');
+}
+
+// Shift+Enter = nova linha, Enter sozinho = enviar
+$input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    $form.requestSubmit();
+  }
+});
+
+loadConversations();
+</script>
+{% endif %}
+{% endblock %}

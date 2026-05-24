@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Configuracoes{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Configuracoes</h1>
+  <p>Plataforma ativa, tema e informacoes do app.</p>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Plataforma</h2>
+  <p class="config-desc">Escolha qual backend sera consultado. A selecao fica salva neste navegador.</p>
+  <label>
+    Plataforma ativa
+    <select id="platform-select">
+      {% for p in platforms %}
+        <option value="{{ p.id }}">{{ p.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="config-foot" id="save-msg"></p>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Plataformas suportadas</h2>
+  <ul class="config-list">
+    <li><strong>Ubidots Industrial</strong> · API v2.0 com filtros de grupo, auth <code>X-Auth-Token</code></li>
+    <li><strong>JKControl (NEXUS CORE)</strong> · REST <code>/api</code> com auth <code>Bearer ag_...</code>, variaveis embutidas em <code>GET /api/devices</code></li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Providers de IA</h2>
+  <p class="config-desc">Para usar a pagina /ai, configure pelo menos uma chave no <code>.env</code> e reinicie o servidor.</p>
+  <ul class="config-list">
+    {% set provider_ids = ai_providers | map(attribute='id') | list %}
+    <li>
+      <strong>Anthropic Claude</strong> ·
+      {% if 'anthropic' in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">nao configurado</span>{% endif %}
+      · <code>ANTHROPIC_API_KEY</code> · <a href="https://console.anthropic.com" target="_blank">obter chave</a>
+    </li>
+    <li>
+      <strong>OpenAI GPT</strong> ·
+      {% if 'openai' in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">nao configurado</span>{% endif %}
+      · <code>OPENAI_API_KEY</code> · <a href="https://platform.openai.com/api-keys" target="_blank">obter chave</a>
+    </li>
+    <li>
+      <strong>Google Gemini</strong> ·
+      {% if 'google' in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">nao configurado</span>{% endif %}
+      · <code>GOOGLE_API_KEY</code> · <a href="https://aistudio.google.com/apikey" target="_blank">obter chave (free tier)</a>
+    </li>
+    <li>
+      <strong>Ollama (local)</strong> ·
+      {% if 'ollama' in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">nao configurado</span>{% endif %}
+      · <code>OLLAMA_BASE_URL</code> · <a href="https://ollama.com" target="_blank">instalar Ollama</a>
+    </li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Sobre</h2>
+  <ul class="config-list">
+    <li>Versao do app: 1.4.0</li>
+    <li>Servidor: <code>http://127.0.0.1:8000</code></li>
+    <li>Configuracao de credenciais: arquivo <code>.env</code> na raiz do projeto</li>
+    <li>Transformacoes de unidade: <code>app/transforms.py</code></li>
+    <li>Fuso horario dos relatorios: America/Sao_Paulo</li>
+  </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const { currentPlatform, setPlatform } = window.app;
+  const $sel = document.getElementById('platform-select');
+  const $msg = document.getElementById('save-msg');
+  $sel.value = currentPlatform();
+  $sel.addEventListener('change', () => {
+    setPlatform($sel.value);
+    $msg.textContent = `Salvo: ${$sel.options[$sel.selectedIndex].text}`;
+    setTimeout(() => $msg.textContent = '', 2500);
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,45 @@
+# docker-compose.yml - Relatorios IoT
+#
+# Uso:
+#   docker compose up -d        # sobe em background
+#   docker compose logs -f      # acompanha logs
+#   docker compose pull         # baixa nova versao (se usando imagem publicada)
+#   docker compose down         # para
+#
+# Antes da 1a execucao: copie .env.example para .env e preencha os tokens.
+
+services:
+  relatorios:
+    # Para build local (desenvolvimento):
+    build: .
+    # Para produção, comente o "build" acima e descomente abaixo:
+    # image: ghcr.io/jeffersonjkcontrol/relatorios-iot:latest
+
+    container_name: relatorios-iot
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"   # acessar via http://IP-DO-SERVIDOR:8000 na LAN
+
+    env_file:
+      - .env          # tokens das plataformas + chaves de IA
+
+    volumes:
+      - data:/app/data   # SQLite (historico IA) + relatorios gerados
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+    name: relatorios-iot-data

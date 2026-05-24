@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Relatorios{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Relatorios</h1>
+  <p>Consulte historicos e exporte em PDF ou CSV.</p>
+</div>
+
+<div class="card">
+  <form id="form-relatorio" method="post" action="/relatorio">
+    <input type="hidden" name="platform" id="platform-hidden">
+    <div class="grid">
+      <label>
+        Grupo (opcional)
+        <input type="text" name="group" id="group" list="groups-list" placeholder="ex.: injetoras_injequaly">
+        <datalist id="groups-list"></datalist>
+        <small class="hint" id="group-hint">deixe vazio para todos</small>
+      </label>
+
+      <label>
+        Dispositivo
+        <input type="text" name="device" id="device" list="devices-list" required placeholder="ex.: inj82">
+        <datalist id="devices-list"></datalist>
+        <small class="hint" id="device-hint"></small>
+      </label>
+
+      <label>
+        Variavel
+        <input type="text" name="variable" id="variable" list="vars-list" required placeholder="ex.: parada">
+        <datalist id="vars-list"></datalist>
+        <small class="hint" id="var-hint"></small>
+      </label>
+
+      <label>
+        Inicio
+        <input type="datetime-local" name="start" id="start">
+      </label>
+
+      <label>
+        Fim
+        <input type="datetime-local" name="end" id="end">
+      </label>
+
+      <label>
+        Formato
+        <select name="formato" id="formato">
+          <option value="pdf">PDF</option>
+          <option value="csv">CSV</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn-primary" id="btn-preview">Visualizar</button>
+      <span id="status" class="status"></span>
+    </div>
+  </form>
+</div>
+
+<section id="preview" class="card preview hidden">
+  <div class="preview-header">
+    <h2 id="preview-title">Preview</h2>
+    <div class="downloads">
+      <button type="button" class="btn-secondary" id="btn-csv">Baixar CSV</button>
+      <button type="button" class="btn-primary" id="btn-pdf">Baixar PDF</button>
+    </div>
+  </div>
+  <div class="stats-grid" id="stats"></div>
+  <div class="table-wrap">
+    <table id="preview-table">
+      <thead><tr><th>#</th><th>Data/Hora</th><th>Valor</th><th class="ctx-col">Contexto</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <p class="preview-foot" id="preview-foot"></p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const { jget, setDatalist, debounced, currentPlatform } = window.app;
+  const platform = currentPlatform();
+  document.getElementById('platform-hidden').value = platform;
+
+  const $group = document.getElementById('group');
+  const $device = document.getElementById('device');
+  const $variable = document.getElementById('variable');
+  const $groupsList = document.getElementById('groups-list');
+  const $devicesList = document.getElementById('devices-list');
+  const $varsList = document.getElementById('vars-list');
+  const $groupHint = document.getElementById('group-hint');
+  const $deviceHint = document.getElementById('device-hint');
+  const $varHint = document.getElementById('var-hint');
+  const $status = document.getElementById('status');
+
+  async function loadGroups() {
+    $groupHint.textContent = 'carregando...';
+    try {
+      const list = await jget(`/api/groups?platform=${encodeURIComponent(platform)}`);
+      setDatalist($groupsList, list.map(g => ({ value: g.label, text: g.name })));
+      $groupHint.textContent = list.length
+        ? `${list.length} grupos disponiveis · deixe vazio para todos`
+        : 'sem listagem disponivel · digite manualmente se necessario';
+    } catch (e) {
+      $groupHint.textContent = `erro: ${e.message}`;
+    }
+  }
+
+  async function loadDevices() {
+    $deviceHint.textContent = 'carregando...';
+    try {
+      const params = new URLSearchParams({ platform });
+      if ($group.value) params.set('group', $group.value);
+      const list = await jget(`/api/devices?${params}`);
+      setDatalist($devicesList, list.map(d => ({ value: d.label, text: d.name })));
+      $deviceHint.textContent = list.length ? `${list.length} dispositivos` : 'sem listagem · digite o label';
+    } catch (e) {
+      $deviceHint.textContent = `erro: ${e.message}`;
+    }
+  }
+
+  async function loadVariables() {
+    if (!$device.value && !$group.value) {
+      setDatalist($varsList, []);
+      $varHint.textContent = 'preencha dispositivo ou grupo';
+      return;
+    }
+    $varHint.textContent = 'carregando...';
+    try {
+      const params = new URLSearchParams({ platform });
+      if ($device.value) params.set('device', $device.value);
+      if ($group.value) params.set('group', $group.value);
+      const list = await jget(`/api/variables?${params}`);
+      const seen = new Set();
+      const uniq = list.filter(v => { if (seen.has(v.label)) return false; seen.add(v.label); return true; });
+      setDatalist($varsList, uniq.map(v => ({ value: v.label, text: `${v.name}${v.unit ? ' [' + v.unit + ']' : ''}` })));
+      $varHint.textContent = uniq.length ? `${uniq.length} variaveis` : 'sem listagem · digite o label';
+    } catch (e) {
+      $varHint.textContent = `erro: ${e.message}`;
+    }
+  }
+
+  $group.addEventListener('input', debounced(() => { loadDevices(); loadVariables(); }));
+  $device.addEventListener('input', debounced(loadVariables));
+
+  // ---------- Preview + downloads ----------
+  const $preview = document.getElementById('preview');
+  const $stats = document.getElementById('stats');
+  const $tbody = document.querySelector('#preview-table tbody');
+  const $ctxCol = document.querySelector('.ctx-col');
+  const $foot = document.getElementById('preview-foot');
+  const $title = document.getElementById('preview-title');
+
+  function fmtCtx(c) {
+    if (!c || typeof c !== 'object') return '';
+    return Object.entries(c).map(([k, v]) => `${k}=${v}`).join(', ');
+  }
+  function fmtNum(n) {
+    if (n === null || n === undefined) return '-';
+    if (typeof n === 'string') return n;
+    return n.toFixed(3);
+  }
+  function currentQuery() {
+    if (!$device.value || !$variable.value) {
+      $status.textContent = 'preencha dispositivo e variavel';
+      return null;
+    }
+    $status.textContent = '';
+    const p = new URLSearchParams({ platform, device: $device.value, variable: $variable.value });
+    if (document.getElementById('start').value) p.set('start', document.getElementById('start').value);
+    if (document.getElementById('end').value) p.set('end', document.getElementById('end').value);
+    return p;
+  }
+
+  async function doPreview() {
+    const q = currentQuery();
+    if (!q) return;
+    $status.textContent = 'Carregando preview...';
+    try {
+      const d = await jget(`/api/preview?${q}&limit=200`);
+      const conv = d.transform.applied ? ` <span class="badge">×${d.transform.factor} ${d.transform.unit}</span>` : '';
+      $title.innerHTML = `Preview: ${d.device} / ${d.variable}${conv}`;
+      $stats.innerHTML = `
+        <div class="stat"><span class="lbl">Total</span><span class="val">${d.total}</span></div>
+        <div class="stat"><span class="lbl">Minimo</span><span class="val">${fmtNum(d.stats.min)}</span></div>
+        <div class="stat"><span class="lbl">Maximo</span><span class="val">${fmtNum(d.stats.max)}</span></div>
+        <div class="stat"><span class="lbl">Media</span><span class="val">${fmtNum(d.stats.mean)}</span></div>
+        <div class="stat"><span class="lbl">1a amostra</span><span class="val">${d.first_ts || '-'}</span></div>
+        <div class="stat"><span class="lbl">Ultima</span><span class="val">${d.last_ts || '-'}</span></div>
+      `;
+      $ctxCol.style.display = d.has_context ? '' : 'none';
+      $tbody.innerHTML = d.points.map((p, i) => `
+        <tr>
+          <td>${d.total - i}</td>
+          <td>${p.ts}</td>
+          <td class="num">${p.value}</td>
+          ${d.has_context ? `<td class="ctx">${fmtCtx(p.context)}</td>` : ''}
+        </tr>
+      `).join('') || `<tr><td colspan="${d.has_context ? 4 : 3}" class="empty">Sem dados no periodo.</td></tr>`;
+      $foot.textContent = d.total > d.showing
+        ? `Mostrando as ${d.showing} amostras mais recentes de ${d.total} totais (relatorio incluira todas).`
+        : `Mostrando todas as ${d.showing} amostras.`;
+      $preview.classList.remove('hidden');
+      $preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $status.textContent = '';
+    } catch (e) {
+      $status.textContent = `Erro: ${e.message}`;
+    }
+  }
+
+  function download(formato) {
+    const q = currentQuery();
+    if (!q) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/relatorio';
+    form.target = formato === 'pdf' ? '_blank' : '_self';
+    for (const [k, v] of q) {
+      const inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = k; inp.value = v;
+      form.appendChild(inp);
+    }
+    const fmt = document.createElement('input');
+    fmt.type = 'hidden'; fmt.name = 'formato'; fmt.value = formato;
+    form.appendChild(fmt);
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+  }
+
+  document.getElementById('btn-preview').addEventListener('click', doPreview);
+  document.getElementById('btn-pdf').addEventListener('click', () => download('pdf'));
+  document.getElementById('btn-csv').addEventListener('click', () => download('csv'));
+
+  loadGroups();
+  loadDevices();
+</script>
+{% endblock %}

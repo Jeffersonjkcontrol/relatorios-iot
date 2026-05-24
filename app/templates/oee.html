@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}OEE{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>OEE - Overall Equipment Effectiveness</h1>
+  <p>Calcule a eficiencia da maquina injetora informando ciclo ideal e refugo do periodo.</p>
+</div>
+
+<div class="card">
+  <form id="form-oee">
+    <div class="grid">
+      <label>
+        Maquina (dispositivo)
+        <input type="text" id="oee-device" list="devices-list" required placeholder="ex.: inj82">
+        <datalist id="devices-list"></datalist>
+        <small class="hint" id="device-hint"></small>
+      </label>
+      <label>
+        Variavel de ciclo
+        <input type="text" id="oee-variable" list="vars-list" required value="ciclo" placeholder="ciclo">
+        <datalist id="vars-list"></datalist>
+        <small class="hint" id="var-hint"></small>
+      </label>
+      <label>
+        Inicio do periodo
+        <input type="datetime-local" id="oee-start" required>
+      </label>
+      <label>
+        Fim do periodo
+        <input type="datetime-local" id="oee-end" required>
+      </label>
+      <label>
+        Ciclo ideal (segundos)
+        <input type="number" id="oee-ideal" step="0.01" min="0" required placeholder="ex.: 45.00">
+        <small class="hint">tempo otimo teorico de 1 ciclo</small>
+      </label>
+      <label>
+        Pecas nao conformes (refugo)
+        <input type="number" id="oee-refugo" min="0" value="0" required>
+        <small class="hint">pecas produzidas mas descartadas</small>
+      </label>
+      <label>
+        Filtro de outliers (× ciclo ideal)
+        <input type="number" id="oee-outlier" step="0.5" min="0" value="3">
+        <small class="hint">ciclos &gt; N × ideal viram paradas (0 desativa)</small>
+      </label>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn-primary" id="btn-oee-calc">Calcular OEE</button>
+      <button type="button" class="btn-secondary" id="btn-oee-pdf" disabled>Baixar PDF</button>
+      <span id="oee-status" class="status"></span>
+    </div>
+  </form>
+</div>
+
+<section id="oee-result" class="hidden">
+  <div class="oee-kpis" id="oee-kpis"></div>
+  <div class="card">
+    <div class="stats-grid" id="oee-detail"></div>
+    <div id="oee-warnings"></div>
+    <details class="oee-formula">
+      <summary>Memorial de calculo</summary>
+      <div id="oee-formula-body"></div>
+    </details>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const { jget, setDatalist, debounced, currentPlatform } = window.app;
+  const platform = currentPlatform();
+
+  const $oeeDevice = document.getElementById('oee-device');
+  const $oeeVar = document.getElementById('oee-variable');
+  const $devicesList = document.getElementById('devices-list');
+  const $varsList = document.getElementById('vars-list');
+  const $deviceHint = document.getElementById('device-hint');
+  const $varHint = document.getElementById('var-hint');
+
+  async function loadDevices() {
+    $deviceHint.textContent = 'carregando...';
+    try {
+      const list = await jget(`/api/devices?platform=${encodeURIComponent(platform)}`);
+      setDatalist($devicesList, list.map(d => ({ value: d.label, text: d.name })));
+      $deviceHint.textContent = list.length ? `${list.length} dispositivos` : 'digite o label manualmente';
+    } catch (e) {
+      $deviceHint.textContent = `erro: ${e.message}`;
+    }
+  }
+
+  async function loadVariables() {
+    if (!$oeeDevice.value) return;
+    $varHint.textContent = 'carregando...';
+    try {
+      const list = await jget(`/api/variables?platform=${encodeURIComponent(platform)}&device=${encodeURIComponent($oeeDevice.value)}`);
+      const seen = new Set();
+      const uniq = list.filter(v => { if (seen.has(v.label)) return false; seen.add(v.label); return true; });
+      setDatalist($varsList, uniq.map(v => ({ value: v.label, text: `${v.name}${v.unit ? ' [' + v.unit + ']' : ''}` })));
+      $varHint.textContent = uniq.length ? `${uniq.length} variaveis` : 'digite manualmente';
+    } catch (e) {
+      $varHint.textContent = `erro: ${e.message}`;
+    }
+  }
+
+  $oeeDevice.addEventListener('input', debounced(loadVariables));
+  loadDevices();
+
+  const $oeeStart = document.getElementById('oee-start');
+  const $oeeEnd = document.getElementById('oee-end');
+  const $oeeIdeal = document.getElementById('oee-ideal');
+  const $oeeRefugo = document.getElementById('oee-refugo');
+  const $oeeOutlier = document.getElementById('oee-outlier');
+  const $oeeStatus = document.getElementById('oee-status');
+  const $oeeResult = document.getElementById('oee-result');
+  const $oeeKpis = document.getElementById('oee-kpis');
+  const $oeeDetail = document.getElementById('oee-detail');
+  const $oeeWarnings = document.getElementById('oee-warnings');
+  const $oeeFormula = document.getElementById('oee-formula-body');
+  const $btnOeePdf = document.getElementById('btn-oee-pdf');
+
+  function level(v) { return v >= 0.85 ? 'good' : v >= 0.60 ? 'warn' : 'bad'; }
+  function levelIcon(v) {
+    const l = level(v);
+    const ch = l === 'good' ? '✓' : l === 'warn' ? '!' : '✕';
+    return `<span class="kpi-icon ${l}">${ch}</span>`;
+  }
+  function pct(v) { return (v * 100).toFixed(1).replace('.', ',') + '%'; }
+  function fmtDur(s) {
+    if (s < 60) return s.toFixed(2).replace('.', ',') + ' s';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = Math.floor(s % 60);
+    return (h > 0 ? `${h}h ` : '') + `${String(m).padStart(2,'0')}m ${String(ss).padStart(2,'0')}s`;
+  }
+  function fmtN(v, dec = 2) { return v.toFixed(dec).replace('.', ','); }
+
+  function oeeQuery() {
+    if (!$oeeDevice.value || !$oeeVar.value || !$oeeStart.value || !$oeeEnd.value || !$oeeIdeal.value) {
+      $oeeStatus.textContent = 'preencha todos os campos';
+      return null;
+    }
+    $oeeStatus.textContent = '';
+    return new URLSearchParams({
+      platform, device: $oeeDevice.value, variable: $oeeVar.value,
+      start: $oeeStart.value, end: $oeeEnd.value,
+      ciclo_ideal: $oeeIdeal.value, refugo: $oeeRefugo.value || '0',
+      outlier_factor: $oeeOutlier.value || '3',
+    });
+  }
+
+  async function calcOee() {
+    const q = oeeQuery();
+    if (!q) return;
+    $oeeStatus.textContent = 'Calculando...';
+    $btnOeePdf.disabled = true;
+    try {
+      const d = await jget(`/api/oee?${q}`);
+      renderOee(d);
+      $btnOeePdf.disabled = false;
+      $oeeStatus.textContent = '';
+    } catch (e) {
+      $oeeStatus.textContent = `Erro: ${e.message}`;
+    }
+  }
+
+  function kpiCard(label, value, sub) {
+    return `
+      <div class="kpi kpi-${level(value)}">
+        <div class="kpi-header">
+          <span class="kpi-lbl">${label}</span>
+          ${levelIcon(value)}
+        </div>
+        <div class="kpi-val">${pct(value)}</div>
+        ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+      </div>
+    `;
+  }
+
+  function renderOee(d) {
+    $oeeKpis.innerHTML =
+      kpiCard('OEE', d.oee) +
+      kpiCard('Disponibilidade', d.disponibilidade, `${fmtDur(d.tempo_produzindo_s)} / ${fmtDur(d.tempo_planejado_s)}`) +
+      kpiCard('Performance', d.performance, `ideal ${fmtN(d.ciclo_ideal_s)}s · medio ${fmtN(d.ciclo_medio_s)}s`) +
+      kpiCard('Qualidade', d.qualidade, `${d.pecas_boas} boas / ${d.pecas_totais} totais`);
+
+    const outlierStat = d.outlier_factor > 0
+      ? `<div class="stat"><span class="lbl">Outliers descartados</span><span class="val">${d.ciclos_descartados} (${fmtDur(d.tempo_descartado_s)})</span></div>
+         <div class="stat"><span class="lbl">Limite outlier</span><span class="val">${fmtN(d.outlier_threshold_s, 1)} s</span></div>` : '';
+    $oeeDetail.innerHTML = `
+      <div class="stat"><span class="lbl">Pecas validas</span><span class="val">${d.pecas_totais}</span></div>
+      <div class="stat"><span class="lbl">Pecas boas</span><span class="val">${d.pecas_boas}</span></div>
+      <div class="stat"><span class="lbl">Refugo</span><span class="val">${d.pecas_nao_conformes}</span></div>
+      ${outlierStat}
+      <div class="stat"><span class="lbl">Tempo planejado</span><span class="val">${fmtDur(d.tempo_planejado_s)}</span></div>
+      <div class="stat"><span class="lbl">Tempo produzindo</span><span class="val">${fmtDur(d.tempo_produzindo_s)}</span></div>
+      <div class="stat"><span class="lbl">Tempo parado</span><span class="val">${fmtDur(d.tempo_parado_s)}</span></div>
+      <div class="stat"><span class="lbl">Ciclo ideal</span><span class="val">${fmtN(d.ciclo_ideal_s, 3)} s</span></div>
+      <div class="stat"><span class="lbl">Ciclo medio</span><span class="val">${fmtN(d.ciclo_medio_s, 3)} s</span></div>
+      <div class="stat"><span class="lbl">Ciclo min</span><span class="val">${fmtN(d.ciclo_min_s, 3)} s</span></div>
+      <div class="stat"><span class="lbl">Ciclo max</span><span class="val">${fmtN(d.ciclo_max_s, 3)} s</span></div>
+    `;
+    $oeeWarnings.innerHTML = d.warnings && d.warnings.length
+      ? `<div class="warnings"><strong>Avisos:</strong><ul>${d.warnings.map(w => `<li>${w}</li>`).join('')}</ul></div>` : '';
+    $oeeFormula.innerHTML = `
+      <p><strong>Disponibilidade</strong> = tempo_produzindo / tempo_planejado = ${fmtDur(d.tempo_produzindo_s)} / ${fmtDur(d.tempo_planejado_s)} = <strong>${pct(d.disponibilidade)}</strong></p>
+      <p><strong>Performance</strong> = (ciclo_ideal × pecas_totais) / tempo_produzindo = (${fmtN(d.ciclo_ideal_s)} × ${d.pecas_totais}) / ${fmtN(d.tempo_produzindo_s, 1)}s = <strong>${pct(d.performance)}</strong></p>
+      <p><strong>Qualidade</strong> = pecas_boas / pecas_totais = ${d.pecas_boas} / ${d.pecas_totais} = <strong>${pct(d.qualidade)}</strong></p>
+      <p><strong>OEE</strong> = A × P × Q = ${pct(d.disponibilidade)} × ${pct(d.performance)} × ${pct(d.qualidade)} = <strong>${pct(d.oee)}</strong></p>
+    `;
+    $oeeResult.classList.remove('hidden');
+    $oeeResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function downloadOee() {
+    const q = oeeQuery();
+    if (!q) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/relatorio_oee';
+    form.target = '_blank';
+    for (const [k, v] of q) {
+      const inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = k; inp.value = v;
+      form.appendChild(inp);
+    }
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+  }
+
+  document.getElementById('btn-oee-calc').addEventListener('click', calcOee);
+  $btnOeePdf.addEventListener('click', downloadOee);
+</script>
+{% endblock %}

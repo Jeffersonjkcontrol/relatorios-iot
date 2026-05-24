@@ -1,0 +1,52 @@
+# Python runtime embarcado (250MB+, especifico Windows)
+python_runtime/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Credenciais (NUNCA commitar)
+.env
+.env.local
+.env.*.local
+
+# Banco de dados local
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+ai_history.db*
+
+# Dados gerados pelo app
+output/*
+!output/.gitkeep
+
+# Pacote de distribuicao (gerado por docker save)
+dist/
+
+# Backups
+backups/
+*.tar.gz
+
+# Editores / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Arquivos temporarios
+*.tmp
+*.log

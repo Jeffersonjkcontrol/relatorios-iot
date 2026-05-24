@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Relatorios{% endblock %} · JKControl</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/style.css">
+  <script>
+    // Aplica tema antes do paint para evitar flash
+    (function () {
+      const t = localStorage.getItem('theme') || 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <span class="logo">JK</span>
+      <span>Relatorios IoT</span>
+    </div>
+
+    <nav class="topbar-nav">
+      <a class="nav-link {% if current_page == 'relatorios' %}active{% endif %}" href="/">Relatorios</a>
+      <a class="nav-link {% if current_page == 'oee' %}active{% endif %}" href="/oee">OEE</a>
+      <a class="nav-link {% if current_page == 'ai' %}active{% endif %}" href="/ai">IA</a>
+      <a class="nav-link {% if current_page == 'config' %}active{% endif %}" href="/config">Configuracoes</a>
+    </nav>
+
+    <div class="topbar-actions">
+      <a class="platform-pill" href="/config" id="active-platform-pill" title="Trocar plataforma">
+        <span class="dot"></span>
+        <span id="active-platform">-</span>
+      </a>
+      <button class="icon-btn" id="theme-toggle" title="Alternar tema" aria-label="Alternar tema">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="theme-icon-sun">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="/static/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
