@@ -35,7 +35,7 @@ def _client(platform_id: str) -> PlatformClient:
     if not token:
         raise HTTPException(
             status_code=400,
-            detail=f"Token nao configurado para '{platform_id}'. Edite o arquivo .env.",
+            detail=f"Token não configurado para '{platform_id}'. Edite o arquivo .env.",
         )
     return make_client(platform_id, base_url, token)
 
@@ -95,7 +95,7 @@ async def ai_conversations():
 async def ai_conversation_get(cid: str):
     conv = ai_db.get_conversation(cid)
     if not conv:
-        raise HTTPException(status_code=404, detail="Conversa nao encontrada")
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
     return conv
 
 
@@ -114,9 +114,9 @@ async def ai_chat(request: Request):
     conv_id = body.get("conversation_id")
 
     if not message:
-        raise HTTPException(400, "mensagem vazia")
+        raise HTTPException(400, "Mensagem vazia")
     if not provider_id or not model:
-        raise HTTPException(400, "provider e model sao obrigatorios")
+        raise HTTPException(400, "Provedor e modelo são obrigatórios")
 
     # Cria conversa se necessario
     if not conv_id:
@@ -174,7 +174,7 @@ async def api_devices(platform: str, group: str | None = None):
     try:
         devices = await client.list_devices(group_label=group or None)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erro ao listar devices: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao listar dispositivos: {e}")
     return [
         {"label": d.get("label"), "name": d.get("name") or d.get("label")}
         for d in devices
@@ -191,7 +191,7 @@ async def api_variables(platform: str, device: str | None = None, group: str | N
             group_label=group or None,
         )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erro ao listar variaveis: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao listar variáveis: {e}")
 
     result = []
     for v in variables:

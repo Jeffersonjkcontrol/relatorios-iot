@@ -103,8 +103,8 @@ def compute_oee(
 
     if descartados > 0:
         warnings.append(
-            f"{descartados} ciclo(s) > {threshold:.0f}s descartado(s) "
-            f"({_fmt_short_dur(tempo_descartado)} totais) - tratados como paradas/anomalias."
+            f"{descartados} ciclo(s) maior(es) que {threshold:.0f}s descartado(s) "
+            f"({_fmt_short_dur(tempo_descartado)} no total) — tratados como paradas/anomalias."
         )
 
     if pecas_totais == 0:
@@ -121,12 +121,12 @@ def compute_oee(
             tempo_planejado_s=0, tempo_produzindo_s=0, tempo_parado_s=0,
             ciclo_medio_s=0, ciclo_min_s=0, ciclo_max_s=0,
             disponibilidade=0, performance=0, qualidade=0, oee=0,
-            warnings=warnings + ["Sem ciclos validos apos filtro de outliers."],
+            warnings=warnings + ["Sem ciclos válidos após o filtro de outliers."],
         )
 
     if pecas_nao_conformes > pecas_totais:
         warnings.append(
-            f"Pecas nao conformes ({pecas_nao_conformes}) > pecas totais ({pecas_totais}). "
+            f"Peças não conformes ({pecas_nao_conformes}) maior que o total de peças ({pecas_totais}). "
             "Qualidade limitada a 0."
         )
         pecas_nao_conformes = pecas_totais
@@ -144,11 +144,11 @@ def compute_oee(
 
     if tempo_planejado_s <= 0:
         tempo_planejado_s = tempo_produzindo_s
-        warnings.append("Janela planejada invalida, usando soma dos ciclos como tempo planejado.")
+        warnings.append("Janela planejada inválida; usando a soma dos ciclos como tempo planejado.")
 
     if tempo_produzindo_s > tempo_planejado_s:
         warnings.append(
-            f"Soma dos ciclos ({tempo_produzindo_s:.1f}s) > janela planejada ({tempo_planejado_s:.1f}s). "
+            f"Soma dos ciclos ({tempo_produzindo_s:.1f}s) maior que a janela planejada ({tempo_planejado_s:.1f}s). "
             "Disponibilidade limitada a 100%."
         )
         tempo_produzindo_s = tempo_planejado_s
@@ -161,14 +161,14 @@ def compute_oee(
         performance = (ciclo_ideal_s * pecas_totais) / tempo_produzindo_s
         if performance > 1.0:
             warnings.append(
-                f"Performance > 100% ({performance*100:.1f}%) - ciclo ideal ({ciclo_ideal_s}s) "
-                f"pode estar superestimado em relacao ao ciclo medio."
+                f"Performance maior que 100% ({performance*100:.1f}%) — o ciclo ideal ({ciclo_ideal_s}s) "
+                f"pode estar superestimado em relação ao ciclo médio."
             )
             performance = 1.0
     else:
         performance = 0
         if ciclo_ideal_s <= 0:
-            warnings.append("Ciclo ideal nao informado - Performance = 0.")
+            warnings.append("Ciclo ideal não informado — Performance = 0.")
 
     qualidade = pecas_boas / pecas_totais if pecas_totais > 0 else 0
     oee = disponibilidade * performance * qualidade

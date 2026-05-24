@@ -28,7 +28,7 @@ PLATFORM_IDS = [p["id"] for p in PLATFORMS]
 def _client(platform: str):
     base_url, token = settings.platform(platform)
     if not token:
-        raise ValueError(f"Token nao configurado para plataforma '{platform}'")
+        raise ValueError(f"Token não configurado para a plataforma '{platform}'")
     return make_client(platform, base_url, token)
 
 
@@ -65,11 +65,11 @@ async def _get_devices_cached(platform: str) -> list[dict]:
 
 
 async def _resolve_device(platform: str, device_input: str) -> str:
-    """Recebe nome amigavel ou label, retorna o label real.
+    """Recebe nome amigável ou label e retorna o label real.
     Faz match exato no label primeiro, depois match no name (case-insensitive,
-    com normalizacao de espacos). Levanta erro com sugestoes se nao achar."""
+    com normalização de espaços). Levanta erro com sugestões se não achar."""
     if not device_input:
-        raise ValueError("Dispositivo nao informado")
+        raise ValueError("Dispositivo não informado")
 
     devices = await _get_devices_cached(platform)
     if not devices:
@@ -103,13 +103,13 @@ async def _resolve_device(platform: str, device_input: str) -> str:
         return matches[0]["label"]
     if len(matches) > 1:
         sug = ", ".join(f"{m['label']} ({m.get('name', '')})" for m in matches[:5])
-        raise ValueError(f"'{raw}' eh ambiguo. Encontrei varios: {sug}. Use o label exato.")
+        raise ValueError(f"'{raw}' é ambíguo. Encontrei vários: {sug}. Use o label exato.")
 
-    # nao achou - retornar sugestoes
+    # não achou — retornar sugestões
     sample = ", ".join(f"{d['label']} ({d.get('name', '')})" for d in devices[:8])
     raise ValueError(
-        f"Dispositivo '{raw}' nao encontrado na plataforma '{platform}'. "
-        f"Dispositivos disponiveis (amostra): {sample}. Total: {len(devices)}."
+        f"Dispositivo '{raw}' não encontrado na plataforma '{platform}'. "
+        f"Dispositivos disponíveis (amostra): {sample}. Total: {len(devices)}."
     )
 
 
@@ -251,7 +251,7 @@ async def t_generate_report_link(tipo: str, platform: str, device: str, variable
             "method": "POST",
             "url": "/relatorio_oee",
             "params": params,
-            "label": f"Baixar PDF de OEE - {device}",
+            "label": f"Baixar PDF de OEE — {device}",
         }
     else:
         params = {
@@ -263,7 +263,7 @@ async def t_generate_report_link(tipo: str, platform: str, device: str, variable
             "method": "POST",
             "url": "/relatorio",
             "params": params,
-            "label": f"Baixar {formato.upper()} - {device}/{variable}",
+            "label": f"Baixar {formato.upper()} — {device}/{variable}",
         }
 
 
@@ -273,7 +273,7 @@ TOOLS: dict[str, dict] = {
         "fn": t_list_platforms,
         "def": ToolDef(
             name="list_platforms",
-            description="Lista as plataformas IoT configuradas. Use quando o usuario nao especificou de qual plataforma quer os dados.",
+            description="Lista as plataformas IoT configuradas. Use quando o usuário não especificou de qual plataforma quer os dados.",
             parameters={"type": "object", "properties": {}, "required": []},
         ),
     },
@@ -281,7 +281,7 @@ TOOLS: dict[str, dict] = {
         "fn": t_list_groups,
         "def": ToolDef(
             name="list_groups",
-            description="Lista os grupos de dispositivos disponiveis numa plataforma.",
+            description="Lista os grupos de dispositivos disponíveis em uma plataforma.",
             parameters={
                 "type": "object",
                 "properties": {"platform": {"type": "string", "enum": PLATFORM_IDS}},
@@ -293,7 +293,7 @@ TOOLS: dict[str, dict] = {
         "fn": t_list_devices,
         "def": ToolDef(
             name="list_devices",
-            description="Lista dispositivos (maquinas) de uma plataforma, opcionalmente filtrados por grupo.",
+            description="Lista dispositivos (máquinas) de uma plataforma, opcionalmente filtrados por grupo.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -308,7 +308,7 @@ TOOLS: dict[str, dict] = {
         "fn": t_list_variables,
         "def": ToolDef(
             name="list_variables",
-            description="Lista variaveis disponiveis em um dispositivo (ou grupo). Use para descobrir o que pode ser consultado.",
+            description="Lista variáveis disponíveis em um dispositivo (ou grupo). Use para descobrir o que pode ser consultado.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -324,14 +324,14 @@ TOOLS: dict[str, dict] = {
         "fn": t_summarize_variable,
         "def": ToolDef(
             name="summarize_variable",
-            description="Retorna estatisticas (min/max/media/count) + amostra das 10 ultimas leituras de uma variavel num periodo. Datas aceitam 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM', 'now', '-2h', '-1d', '-30m'.",
+            description="Retorna estatísticas (mín/máx/média/count) e amostra das 10 últimas leituras de uma variável num período. Datas aceitam 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM', 'now', '-2h', '-1d', '-30m'.",
             parameters={
                 "type": "object",
                 "properties": {
                     "platform": {"type": "string", "enum": PLATFORM_IDS},
                     "device": {"type": "string"},
                     "variable": {"type": "string"},
-                    "start": {"type": "string", "description": "Inicio (ex.: '2026-05-23', '-24h')"},
+                    "start": {"type": "string", "description": "Início (ex.: '2026-05-23', '-24h')"},
                     "end": {"type": "string", "description": "Fim (ex.: '2026-05-23T18:00', 'now')"},
                 },
                 "required": ["platform", "device", "variable", "start", "end"],
@@ -342,18 +342,18 @@ TOOLS: dict[str, dict] = {
         "fn": t_compute_oee,
         "def": ToolDef(
             name="compute_oee",
-            description="Calcula OEE (Disponibilidade x Performance x Qualidade) de uma maquina injetora. Precisa do ciclo ideal em segundos e do numero de pecas nao conformes (refugo).",
+            description="Calcula OEE (Disponibilidade × Performance × Qualidade) de uma máquina injetora. Precisa do ciclo ideal em segundos e do número de peças não conformes (refugo).",
             parameters={
                 "type": "object",
                 "properties": {
                     "platform": {"type": "string", "enum": PLATFORM_IDS},
                     "device": {"type": "string"},
-                    "variable": {"type": "string", "description": "Variavel de ciclo (geralmente 'ciclo')"},
+                    "variable": {"type": "string", "description": "Variável de ciclo (geralmente 'ciclo')"},
                     "start": {"type": "string"},
                     "end": {"type": "string"},
                     "ciclo_ideal": {"type": "number", "description": "Ciclo ideal em segundos"},
-                    "refugo": {"type": "integer", "description": "Pecas nao conformes", "default": 0},
-                    "outlier_factor": {"type": "number", "description": "Ciclos > N x ideal viram paradas (default 3, 0 desativa)", "default": 3.0},
+                    "refugo": {"type": "integer", "description": "Peças não conformes", "default": 0},
+                    "outlier_factor": {"type": "number", "description": "Ciclos maiores que N × ideal viram paradas (padrão 3, 0 desativa)", "default": 3.0},
                 },
                 "required": ["platform", "device", "variable", "start", "end", "ciclo_ideal"],
             },
@@ -363,7 +363,7 @@ TOOLS: dict[str, dict] = {
         "fn": t_compare_devices,
         "def": ToolDef(
             name="compare_devices",
-            description="Compara a mesma variavel entre varios dispositivos no mesmo periodo. Retorna stats por device.",
+            description="Compara a mesma variável entre vários dispositivos no mesmo período. Retorna estatísticas por dispositivo.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -381,7 +381,7 @@ TOOLS: dict[str, dict] = {
         "fn": t_generate_report_link,
         "def": ToolDef(
             name="generate_report_link",
-            description="Gera um link/botao de download de relatorio. Use quando o usuario pedir um PDF/CSV. tipo='oee' para relatorio OEE (requer ciclo_ideal); tipo='relatorio' para PDF/CSV padrao de variavel.",
+            description="Gera um link/botão de download de relatório. Use quando o usuário pedir um PDF/CSV. tipo='oee' para relatório OEE (requer ciclo_ideal); tipo='relatorio' para PDF/CSV padrão de variável.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -392,7 +392,7 @@ TOOLS: dict[str, dict] = {
                     "start": {"type": "string"},
                     "end": {"type": "string"},
                     "formato": {"type": "string", "enum": ["pdf", "csv"], "default": "pdf"},
-                    "ciclo_ideal": {"type": "number", "description": "Obrigatorio se tipo=oee"},
+                    "ciclo_ideal": {"type": "number", "description": "Obrigatório se tipo=oee"},
                     "refugo": {"type": "integer", "default": 0},
                     "outlier_factor": {"type": "number", "default": 3.0},
                 },
@@ -410,7 +410,7 @@ def all_tool_defs() -> list[ToolDef]:
 async def execute_tool(name: str, arguments: dict) -> str:
     """Executa a tool e retorna JSON serializado (o que vai pro LLM)."""
     if name not in TOOLS:
-        return json.dumps({"error": f"Tool '{name}' nao existe"})
+        return json.dumps({"error": f"Tool '{name}' não existe"})
     try:
         result = await TOOLS[name]["fn"](**arguments)
         return json.dumps(result, ensure_ascii=False, default=str)

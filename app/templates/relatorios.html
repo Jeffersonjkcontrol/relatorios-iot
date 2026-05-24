@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Relatorios{% endblock %}
+{% block title %}Relatórios{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1>Relatorios</h1>
-  <p>Consulte historicos e exporte em PDF ou CSV.</p>
+  <h1>Relatórios</h1>
+  <p>Consulte históricos e exporte em PDF ou CSV.</p>
 </div>
 
 <div class="card">
@@ -26,14 +26,14 @@
       </label>
 
       <label>
-        Variavel
+        Variável
         <input type="text" name="variable" id="variable" list="vars-list" required placeholder="ex.: parada">
         <datalist id="vars-list"></datalist>
         <small class="hint" id="var-hint"></small>
       </label>
 
       <label>
-        Inicio
+        Início
         <input type="datetime-local" name="start" id="start">
       </label>
 
@@ -60,7 +60,7 @@
 
 <section id="preview" class="card preview hidden">
   <div class="preview-header">
-    <h2 id="preview-title">Preview</h2>
+    <h2 id="preview-title">Pré-visualização</h2>
     <div class="downloads">
       <button type="button" class="btn-secondary" id="btn-csv">Baixar CSV</button>
       <button type="button" class="btn-primary" id="btn-pdf">Baixar PDF</button>
@@ -100,8 +100,8 @@
       const list = await jget(`/api/groups?platform=${encodeURIComponent(platform)}`);
       setDatalist($groupsList, list.map(g => ({ value: g.label, text: g.name })));
       $groupHint.textContent = list.length
-        ? `${list.length} grupos disponiveis · deixe vazio para todos`
-        : 'sem listagem disponivel · digite manualmente se necessario';
+        ? `${list.length} grupos disponíveis · deixe vazio para todos`
+        : 'sem listagem disponível · digite manualmente se necessário';
     } catch (e) {
       $groupHint.textContent = `erro: ${e.message}`;
     }
@@ -135,7 +135,7 @@
       const seen = new Set();
       const uniq = list.filter(v => { if (seen.has(v.label)) return false; seen.add(v.label); return true; });
       setDatalist($varsList, uniq.map(v => ({ value: v.label, text: `${v.name}${v.unit ? ' [' + v.unit + ']' : ''}` })));
-      $varHint.textContent = uniq.length ? `${uniq.length} variaveis` : 'sem listagem · digite o label';
+      $varHint.textContent = uniq.length ? `${uniq.length} variáveis` : 'sem listagem · digite o label';
     } catch (e) {
       $varHint.textContent = `erro: ${e.message}`;
     }
@@ -163,7 +163,7 @@
   }
   function currentQuery() {
     if (!$device.value || !$variable.value) {
-      $status.textContent = 'preencha dispositivo e variavel';
+      $status.textContent = 'preencha dispositivo e variável';
       return null;
     }
     $status.textContent = '';
@@ -176,18 +176,18 @@
   async function doPreview() {
     const q = currentQuery();
     if (!q) return;
-    $status.textContent = 'Carregando preview...';
+    $status.textContent = 'Carregando pré-visualização...';
     try {
       const d = await jget(`/api/preview?${q}&limit=200`);
       const conv = d.transform.applied ? ` <span class="badge">×${d.transform.factor} ${d.transform.unit}</span>` : '';
-      $title.innerHTML = `Preview: ${d.device} / ${d.variable}${conv}`;
+      $title.innerHTML = `Pré-visualização: ${d.device} / ${d.variable}${conv}`;
       $stats.innerHTML = `
         <div class="stat"><span class="lbl">Total</span><span class="val">${d.total}</span></div>
-        <div class="stat"><span class="lbl">Minimo</span><span class="val">${fmtNum(d.stats.min)}</span></div>
-        <div class="stat"><span class="lbl">Maximo</span><span class="val">${fmtNum(d.stats.max)}</span></div>
-        <div class="stat"><span class="lbl">Media</span><span class="val">${fmtNum(d.stats.mean)}</span></div>
-        <div class="stat"><span class="lbl">1a amostra</span><span class="val">${d.first_ts || '-'}</span></div>
-        <div class="stat"><span class="lbl">Ultima</span><span class="val">${d.last_ts || '-'}</span></div>
+        <div class="stat"><span class="lbl">Mínimo</span><span class="val">${fmtNum(d.stats.min)}</span></div>
+        <div class="stat"><span class="lbl">Máximo</span><span class="val">${fmtNum(d.stats.max)}</span></div>
+        <div class="stat"><span class="lbl">Média</span><span class="val">${fmtNum(d.stats.mean)}</span></div>
+        <div class="stat"><span class="lbl">1ª amostra</span><span class="val">${d.first_ts || '-'}</span></div>
+        <div class="stat"><span class="lbl">Última</span><span class="val">${d.last_ts || '-'}</span></div>
       `;
       $ctxCol.style.display = d.has_context ? '' : 'none';
       $tbody.innerHTML = d.points.map((p, i) => `
@@ -197,9 +197,9 @@
           <td class="num">${p.value}</td>
           ${d.has_context ? `<td class="ctx">${fmtCtx(p.context)}</td>` : ''}
         </tr>
-      `).join('') || `<tr><td colspan="${d.has_context ? 4 : 3}" class="empty">Sem dados no periodo.</td></tr>`;
+      `).join('') || `<tr><td colspan="${d.has_context ? 4 : 3}" class="empty">Sem dados no período.</td></tr>`;
       $foot.textContent = d.total > d.showing
-        ? `Mostrando as ${d.showing} amostras mais recentes de ${d.total} totais (relatorio incluira todas).`
+        ? `Mostrando as ${d.showing} amostras mais recentes de ${d.total} totais (o relatório incluirá todas).`
         : `Mostrando todas as ${d.showing} amostras.`;
       $preview.classList.remove('hidden');
       $preview.scrollIntoView({ behavior: 'smooth', block: 'start' });

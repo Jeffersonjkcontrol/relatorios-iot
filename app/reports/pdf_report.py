@@ -64,21 +64,21 @@ def build_pdf(
     cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=7, leading=9)
 
     story = []
-    story.append(Paragraph("Relatorio de Leituras", title_style))
+    story.append(Paragraph("Relatório de Leituras", title_style))
     gerado_em = datetime.now(LOCAL_TZ).strftime("%d/%m/%Y %H:%M:%S")
-    story.append(Paragraph(f"Gerado em {gerado_em} - {platform_label}", sub_style))
+    story.append(Paragraph(f"Gerado em {gerado_em} — {platform_label}", sub_style))
     story.append(Spacer(1, 5 * mm))
 
     info = [
         ["Dispositivo", device_label],
-        ["Variavel", variable_label],
-        ["Inicio", start_iso or "-"],
+        ["Variável", variable_label],
+        ["Início", start_iso or "-"],
         ["Fim", end_iso or "-"],
         ["Total de amostras", str(len(points))],
-        ["Possui context", "Sim" if show_ctx else "Nao"],
+        ["Possui contexto", "Sim" if show_ctx else "Não"],
     ]
     if transform:
-        info.append(["Conversao", f"x {transform.factor} {transform.unit}".strip()])
+        info.append(["Conversão", f"× {transform.factor} {transform.unit}".strip()])
         if transform.description:
             info.append(["Nota", transform.description])
 
@@ -88,9 +88,9 @@ def build_pdf(
         decimals = transform.decimals if transform else 3
         unit = (" " + transform.unit) if transform and transform.unit else ""
         info += [
-            ["Minimo", format_br(min(converted), decimals) + unit],
-            ["Maximo", format_br(max(converted), decimals) + unit],
-            ["Media", format_br(mean(converted), decimals) + unit],
+            ["Mínimo", format_br(min(converted), decimals) + unit],
+            ["Máximo", format_br(max(converted), decimals) + unit],
+            ["Média", format_br(mean(converted), decimals) + unit],
         ]
 
     info_table = Table(info, colWidths=[45 * mm, 160 * mm])
@@ -105,7 +105,7 @@ def build_pdf(
     story.append(Spacer(1, 6 * mm))
 
     if not points:
-        story.append(Paragraph("Sem dados no periodo selecionado.", styles["Normal"]))
+        story.append(Paragraph("Sem dados no período selecionado.", styles["Normal"]))
     else:
         story.append(Paragraph("Amostras", styles["Heading3"]))
         valor_header = "Valor"

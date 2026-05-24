@@ -3,42 +3,42 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>OEE - Overall Equipment Effectiveness</h1>
-  <p>Calcule a eficiencia da maquina injetora informando ciclo ideal e refugo do periodo.</p>
+  <h1>OEE — Overall Equipment Effectiveness</h1>
+  <p>Calcule a eficiência da máquina injetora a partir da variável de ciclo. Informe o ciclo ideal e o número de peças não conformes (refugo) do período.</p>
 </div>
 
 <div class="card">
   <form id="form-oee">
     <div class="grid">
       <label>
-        Maquina (dispositivo)
+        Máquina (dispositivo)
         <input type="text" id="oee-device" list="devices-list" required placeholder="ex.: inj82">
         <datalist id="devices-list"></datalist>
         <small class="hint" id="device-hint"></small>
       </label>
       <label>
-        Variavel de ciclo
+        Variável de ciclo
         <input type="text" id="oee-variable" list="vars-list" required value="ciclo" placeholder="ciclo">
         <datalist id="vars-list"></datalist>
         <small class="hint" id="var-hint"></small>
       </label>
       <label>
-        Inicio do periodo
+        Início do período
         <input type="datetime-local" id="oee-start" required>
       </label>
       <label>
-        Fim do periodo
+        Fim do período
         <input type="datetime-local" id="oee-end" required>
       </label>
       <label>
         Ciclo ideal (segundos)
         <input type="number" id="oee-ideal" step="0.01" min="0" required placeholder="ex.: 45.00">
-        <small class="hint">tempo otimo teorico de 1 ciclo</small>
+        <small class="hint">tempo ótimo teórico de 1 ciclo</small>
       </label>
       <label>
-        Pecas nao conformes (refugo)
+        Peças não conformes (refugo)
         <input type="number" id="oee-refugo" min="0" value="0" required>
-        <small class="hint">pecas produzidas mas descartadas</small>
+        <small class="hint">peças produzidas mas descartadas</small>
       </label>
       <label>
         Filtro de outliers (× ciclo ideal)
@@ -61,7 +61,7 @@
     <div class="stats-grid" id="oee-detail"></div>
     <div id="oee-warnings"></div>
     <details class="oee-formula">
-      <summary>Memorial de calculo</summary>
+      <summary>Memorial de cálculo</summary>
       <div id="oee-formula-body"></div>
     </details>
   </div>
@@ -99,7 +99,7 @@
       const seen = new Set();
       const uniq = list.filter(v => { if (seen.has(v.label)) return false; seen.add(v.label); return true; });
       setDatalist($varsList, uniq.map(v => ({ value: v.label, text: `${v.name}${v.unit ? ' [' + v.unit + ']' : ''}` })));
-      $varHint.textContent = uniq.length ? `${uniq.length} variaveis` : 'digite manualmente';
+      $varHint.textContent = uniq.length ? `${uniq.length} variáveis` : 'digite manualmente';
     } catch (e) {
       $varHint.textContent = `erro: ${e.message}`;
     }
@@ -183,31 +183,31 @@
     $oeeKpis.innerHTML =
       kpiCard('OEE', d.oee) +
       kpiCard('Disponibilidade', d.disponibilidade, `${fmtDur(d.tempo_produzindo_s)} / ${fmtDur(d.tempo_planejado_s)}`) +
-      kpiCard('Performance', d.performance, `ideal ${fmtN(d.ciclo_ideal_s)}s · medio ${fmtN(d.ciclo_medio_s)}s`) +
+      kpiCard('Performance', d.performance, `ideal ${fmtN(d.ciclo_ideal_s)}s · médio ${fmtN(d.ciclo_medio_s)}s`) +
       kpiCard('Qualidade', d.qualidade, `${d.pecas_boas} boas / ${d.pecas_totais} totais`);
 
     const outlierStat = d.outlier_factor > 0
       ? `<div class="stat"><span class="lbl">Outliers descartados</span><span class="val">${d.ciclos_descartados} (${fmtDur(d.tempo_descartado_s)})</span></div>
          <div class="stat"><span class="lbl">Limite outlier</span><span class="val">${fmtN(d.outlier_threshold_s, 1)} s</span></div>` : '';
     $oeeDetail.innerHTML = `
-      <div class="stat"><span class="lbl">Pecas validas</span><span class="val">${d.pecas_totais}</span></div>
-      <div class="stat"><span class="lbl">Pecas boas</span><span class="val">${d.pecas_boas}</span></div>
+      <div class="stat"><span class="lbl">Peças válidas</span><span class="val">${d.pecas_totais}</span></div>
+      <div class="stat"><span class="lbl">Peças boas</span><span class="val">${d.pecas_boas}</span></div>
       <div class="stat"><span class="lbl">Refugo</span><span class="val">${d.pecas_nao_conformes}</span></div>
       ${outlierStat}
       <div class="stat"><span class="lbl">Tempo planejado</span><span class="val">${fmtDur(d.tempo_planejado_s)}</span></div>
       <div class="stat"><span class="lbl">Tempo produzindo</span><span class="val">${fmtDur(d.tempo_produzindo_s)}</span></div>
       <div class="stat"><span class="lbl">Tempo parado</span><span class="val">${fmtDur(d.tempo_parado_s)}</span></div>
       <div class="stat"><span class="lbl">Ciclo ideal</span><span class="val">${fmtN(d.ciclo_ideal_s, 3)} s</span></div>
-      <div class="stat"><span class="lbl">Ciclo medio</span><span class="val">${fmtN(d.ciclo_medio_s, 3)} s</span></div>
-      <div class="stat"><span class="lbl">Ciclo min</span><span class="val">${fmtN(d.ciclo_min_s, 3)} s</span></div>
-      <div class="stat"><span class="lbl">Ciclo max</span><span class="val">${fmtN(d.ciclo_max_s, 3)} s</span></div>
+      <div class="stat"><span class="lbl">Ciclo médio</span><span class="val">${fmtN(d.ciclo_medio_s, 3)} s</span></div>
+      <div class="stat"><span class="lbl">Ciclo mín</span><span class="val">${fmtN(d.ciclo_min_s, 3)} s</span></div>
+      <div class="stat"><span class="lbl">Ciclo máx</span><span class="val">${fmtN(d.ciclo_max_s, 3)} s</span></div>
     `;
     $oeeWarnings.innerHTML = d.warnings && d.warnings.length
       ? `<div class="warnings"><strong>Avisos:</strong><ul>${d.warnings.map(w => `<li>${w}</li>`).join('')}</ul></div>` : '';
     $oeeFormula.innerHTML = `
       <p><strong>Disponibilidade</strong> = tempo_produzindo / tempo_planejado = ${fmtDur(d.tempo_produzindo_s)} / ${fmtDur(d.tempo_planejado_s)} = <strong>${pct(d.disponibilidade)}</strong></p>
-      <p><strong>Performance</strong> = (ciclo_ideal × pecas_totais) / tempo_produzindo = (${fmtN(d.ciclo_ideal_s)} × ${d.pecas_totais}) / ${fmtN(d.tempo_produzindo_s, 1)}s = <strong>${pct(d.performance)}</strong></p>
-      <p><strong>Qualidade</strong> = pecas_boas / pecas_totais = ${d.pecas_boas} / ${d.pecas_totais} = <strong>${pct(d.qualidade)}</strong></p>
+      <p><strong>Performance</strong> = (ciclo_ideal × peças_totais) / tempo_produzindo = (${fmtN(d.ciclo_ideal_s)} × ${d.pecas_totais}) / ${fmtN(d.tempo_produzindo_s, 1)}s = <strong>${pct(d.performance)}</strong></p>
+      <p><strong>Qualidade</strong> = peças_boas / peças_totais = ${d.pecas_boas} / ${d.pecas_totais} = <strong>${pct(d.qualidade)}</strong></p>
       <p><strong>OEE</strong> = A × P × Q = ${pct(d.disponibilidade)} × ${pct(d.performance)} × ${pct(d.qualidade)} = <strong>${pct(d.oee)}</strong></p>
     `;
     $oeeResult.classList.remove('hidden');

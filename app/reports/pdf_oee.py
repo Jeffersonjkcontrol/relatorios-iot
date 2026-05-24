@@ -108,21 +108,21 @@ def build_pdf_oee(
     h3 = ParagraphStyle("H3", parent=styles["Heading3"], fontSize=12, spaceBefore=10, spaceAfter=6)
 
     story = []
-    story.append(Paragraph("Relatorio de OEE - Maquina Injetora", title_style))
+    story.append(Paragraph("Relatório de OEE — Máquina Injetora", title_style))
     gerado = datetime.now(LOCAL_TZ).strftime("%d/%m/%Y %H:%M:%S")
-    story.append(Paragraph(f"Gerado em {gerado} - {platform_label}", sub_style))
+    story.append(Paragraph(f"Gerado em {gerado} — {platform_label}", sub_style))
     story.append(Spacer(1, 6 * mm))
 
-    # ----- Identificacao -----
+    # ----- Identificação -----
     inicio = datetime.fromtimestamp(r.janela_inicio_ms / 1000, LOCAL_TZ).strftime("%d/%m/%Y %H:%M:%S")
     fim = datetime.fromtimestamp(r.janela_fim_ms / 1000, LOCAL_TZ).strftime("%d/%m/%Y %H:%M:%S")
     ident = [
-        ["Maquina", device_label],
-        ["Variavel de ciclo", variable_label],
+        ["Máquina", device_label],
+        ["Variável de ciclo", variable_label],
         ["Plataforma", platform_label],
-        ["Inicio do periodo", inicio],
-        ["Fim do periodo", fim],
-        ["Duracao planejada", _fmt_dur(r.tempo_planejado_s)],
+        ["Início do período", inicio],
+        ["Fim do período", fim],
+        ["Duração planejada", _fmt_dur(r.tempo_planejado_s)],
     ]
     tbl = Table(ident, colWidths=[55 * mm, 120 * mm])
     tbl.setStyle(TableStyle([
@@ -140,7 +140,7 @@ def build_pdf_oee(
     kpis = [[
         _kpi_card("OEE", r.oee, "indicador global"),
         _kpi_card("Disponibilidade", r.disponibilidade, f"{_fmt_dur(r.tempo_produzindo_s)} / {_fmt_dur(r.tempo_planejado_s)}"),
-        _kpi_card("Performance", r.performance, f"ideal {format_br(r.ciclo_ideal_s, 2)}s vs medio {format_br(r.ciclo_medio_s, 2)}s"),
+        _kpi_card("Performance", r.performance, f"ideal {format_br(r.ciclo_ideal_s, 2)}s × médio {format_br(r.ciclo_medio_s, 2)}s"),
         _kpi_card("Qualidade", r.qualidade, f"{r.pecas_boas} boas / {r.pecas_totais} totais"),
     ]]
     kpi_table = Table(kpis, colWidths=[44 * mm] * 4)
@@ -152,18 +152,18 @@ def build_pdf_oee(
     story.append(kpi_table)
     story.append(Spacer(1, 8 * mm))
 
-    # ----- Producao -----
-    story.append(Paragraph("Producao", h3))
+    # ----- Produção -----
+    story.append(Paragraph("Produção", h3))
     prod = [
-        ["Pecas totais produzidas (validas)", str(r.pecas_totais)],
-        ["Pecas nao conformes (refugo)", str(r.pecas_nao_conformes)],
-        ["Pecas boas", str(r.pecas_boas)],
+        ["Peças totais produzidas (válidas)", str(r.pecas_totais)],
+        ["Peças não conformes (refugo)", str(r.pecas_nao_conformes)],
+        ["Peças boas", str(r.pecas_boas)],
         ["Refugo (%)", _fmt_pct(r.pecas_nao_conformes / r.pecas_totais if r.pecas_totais else 0)],
     ]
     if r.outlier_factor > 0:
         prod.append([
-            f"Filtro de outliers (>{format_br(r.outlier_threshold_s, 1)}s = {format_br(r.outlier_factor, 1)}x ideal)",
-            f"{r.ciclos_descartados} ciclo(s) descartado(s), {_fmt_dur(r.tempo_descartado_s)} totais",
+            f"Filtro de outliers (>{format_br(r.outlier_threshold_s, 1)}s = {format_br(r.outlier_factor, 1)}× ideal)",
+            f"{r.ciclos_descartados} ciclo(s) descartado(s), {_fmt_dur(r.tempo_descartado_s)} no total",
         ])
     tbl_prod = Table(prod, colWidths=[80 * mm, 95 * mm])
     tbl_prod.setStyle(TableStyle([
@@ -182,9 +182,9 @@ def build_pdf_oee(
         ["Tempo produzindo (soma dos ciclos)", _fmt_dur(r.tempo_produzindo_s)],
         ["Tempo parado", _fmt_dur(r.tempo_parado_s)],
         ["Ciclo ideal", f"{format_br(r.ciclo_ideal_s, 3)} s"],
-        ["Ciclo medio", f"{format_br(r.ciclo_medio_s, 3)} s"],
-        ["Ciclo minimo", f"{format_br(r.ciclo_min_s, 3)} s"],
-        ["Ciclo maximo", f"{format_br(r.ciclo_max_s, 3)} s"],
+        ["Ciclo médio", f"{format_br(r.ciclo_medio_s, 3)} s"],
+        ["Ciclo mínimo", f"{format_br(r.ciclo_min_s, 3)} s"],
+        ["Ciclo máximo", f"{format_br(r.ciclo_max_s, 3)} s"],
     ]
     tbl_t = Table(tempos, colWidths=[80 * mm, 95 * mm])
     tbl_t.setStyle(TableStyle([
@@ -196,13 +196,13 @@ def build_pdf_oee(
     story.append(tbl_t)
     story.append(Spacer(1, 6 * mm))
 
-    # ----- Formula -----
-    story.append(Paragraph("Memorial de calculo", h3))
+    # ----- Fórmula -----
+    story.append(Paragraph("Memorial de cálculo", h3))
     formula = f"""
     <b>Disponibilidade</b> = tempo_produzindo / tempo_planejado = {_fmt_dur(r.tempo_produzindo_s)} / {_fmt_dur(r.tempo_planejado_s)} = <b>{_fmt_pct(r.disponibilidade)}</b><br/>
-    <b>Performance</b> = (ciclo_ideal x pecas_totais) / tempo_produzindo = ({format_br(r.ciclo_ideal_s, 2)} x {r.pecas_totais}) / {format_br(r.tempo_produzindo_s, 1)}s = <b>{_fmt_pct(r.performance)}</b><br/>
-    <b>Qualidade</b> = pecas_boas / pecas_totais = {r.pecas_boas} / {r.pecas_totais} = <b>{_fmt_pct(r.qualidade)}</b><br/>
-    <b>OEE</b> = A x P x Q = {_fmt_pct(r.disponibilidade)} x {_fmt_pct(r.performance)} x {_fmt_pct(r.qualidade)} = <b>{_fmt_pct(r.oee)}</b>
+    <b>Performance</b> = (ciclo_ideal × peças_totais) / tempo_produzindo = ({format_br(r.ciclo_ideal_s, 2)} × {r.pecas_totais}) / {format_br(r.tempo_produzindo_s, 1)}s = <b>{_fmt_pct(r.performance)}</b><br/>
+    <b>Qualidade</b> = peças_boas / peças_totais = {r.pecas_boas} / {r.pecas_totais} = <b>{_fmt_pct(r.qualidade)}</b><br/>
+    <b>OEE</b> = A × P × Q = {_fmt_pct(r.disponibilidade)} × {_fmt_pct(r.performance)} × {_fmt_pct(r.qualidade)} = <b>{_fmt_pct(r.oee)}</b>
     """
     story.append(Paragraph(formula, ParagraphStyle("F", parent=styles["Normal"], fontSize=9, leading=14)))
 

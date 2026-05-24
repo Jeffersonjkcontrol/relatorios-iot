@@ -3,18 +3,18 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>Analise com IA</h1>
-  <p>Pergunte em portugues sobre OEE, ciclos, comparacoes entre maquinas. A IA consulta a API e responde.</p>
+  <h1>Análise com IA</h1>
+  <p>Pergunte em português sobre OEE, ciclos, comparações entre máquinas. A IA consulta a API e responde.</p>
 </div>
 
 {% if not ai_providers %}
   <div class="card warnings">
-    <strong>Nenhum provider de IA configurado.</strong>
+    <strong>Nenhum provedor de IA configurado.</strong>
     <p style="margin: 8px 0 0;">Edite o arquivo <code>.env</code> e adicione ao menos uma chave:</p>
     <ul style="margin-top: 6px;">
       <li><code>ANTHROPIC_API_KEY=sk-ant-...</code> (Claude)</li>
       <li><code>OPENAI_API_KEY=sk-...</code> (GPT)</li>
-      <li><code>GOOGLE_API_KEY=AIza...</code> (Gemini - tem free tier)</li>
+      <li><code>GOOGLE_API_KEY=AIza...</code> (Gemini — tem free tier)</li>
       <li><code>OLLAMA_BASE_URL=http://localhost:11434</code> (local)</li>
     </ul>
     <p style="margin-top: 6px;">Depois reinicie o servidor (feche o terminal do <code>run.bat</code> e execute de novo).</p>
@@ -31,7 +31,7 @@
   <section class="chat-main">
     <div class="chat-toolbar">
       <label>
-        Provider
+        Provedor
         <select id="provider-sel"></select>
       </label>
       <label>
@@ -46,9 +46,9 @@
         <p>Exemplos de perguntas:</p>
         <ul>
           <li>"Liste as injetoras do grupo injetoras_injequaly"</li>
-          <li>"Resumo de ciclo da inj82 nas ultimas 24h"</li>
+          <li>"Resumo do ciclo da inj82 nas últimas 24h"</li>
           <li>"Calcule o OEE da inj82 hoje, ciclo ideal 45s, sem refugo"</li>
-          <li>"Compare ciclo medio das inj81 e inj82 esta semana"</li>
+          <li>"Compare o ciclo médio das inj81 e inj82 nesta semana"</li>
           <li>"Gere PDF de OEE da inj82 ontem"</li>
         </ul>
       </div>
@@ -316,7 +316,7 @@ $form.addEventListener('submit', async (e) => {
           if (/RESOURCE_EXHAUSTED|429|quota/i.test(ev.error)) {
             const m = ev.error.match(/retry in ([\d.]+)s/);
             const retry = m ? ` (tente em ${Math.ceil(parseFloat(m[1]))}s)` : '';
-            friendlyMsg = `Limite de uso da IA atingido${retry}. Troque de modelo/provider nas configuracoes.`;
+            friendlyMsg = `Limite de uso da IA atingido${retry}. Troque de modelo/provedor nas configurações.`;
           } else if (ev.error.length > 300) {
             friendlyMsg = ev.error.slice(0, 300) + '...';
           }

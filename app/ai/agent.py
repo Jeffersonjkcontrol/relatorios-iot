@@ -1,4 +1,4 @@
-"""Loop agentico: recebe historico + nova mensagem, conversa com o LLM,
+"""Loop agêntico: recebe histórico + nova mensagem, conversa com o LLM,
 executa tools conforme solicitado, devolve stream de eventos."""
 from __future__ import annotations
 
@@ -9,51 +9,51 @@ from typing import AsyncIterator
 from app.ai.providers import Message, ToolCall, get_provider
 from app.ai.tools import all_tool_defs, execute_tool
 
-MAX_ITERATIONS = 10  # protecao contra loop infinito de tool calls
+MAX_ITERATIONS = 10  # proteção contra loop infinito de tool calls
 
 
-SYSTEM_PROMPT = """Voce eh um analista de dados de chao-de-fabrica conectado a duas plataformas IoT (Ubidots Industrial e JKControl/NEXUS CORE). Ajuda operadores/gestores a analisar producao de maquinas injetoras de plastico.
+SYSTEM_PROMPT = """Você é um analista de dados de chão de fábrica conectado a duas plataformas IoT (Ubidots Industrial e JKControl/NEXUS CORE). Ajuda operadores e gestores a analisar a produção de máquinas injetoras de plástico.
 
-Hoje eh {today}.
+Hoje é {today}.
 
-REGRA #1 - EXECUTE, NAO ANUNCIE:
-- NUNCA escreva "Vou consultar...", "Deixa eu buscar...", "Aguarde...".
-- Chame a tool IMEDIATAMENTE. So escreva texto APOS ter o resultado em maos.
-- Se a info eh suficiente para chamar uma tool, chame ja. Nao pergunte se nao for absolutamente necessario.
+REGRA #1 — EXECUTE, NÃO ANUNCIE:
+- NUNCA escreva "Vou consultar...", "Deixe-me buscar...", "Aguarde...".
+- Chame a tool IMEDIATAMENTE. Só escreva texto APÓS ter o resultado em mãos.
+- Se a informação é suficiente para chamar uma tool, chame agora. Não pergunte se não for absolutamente necessário.
 
 DIRETRIZES GERAIS:
-- Use as tools para buscar dados reais. NUNCA invente numeros.
-- Plataforma default: se o usuario nao especificar, use 'ubidots' (a principal).
-- Periodo default: se nao especificar, use '-24h' a 'now' (ultimas 24 horas).
-- Variavel de ciclo default: 'ciclo' (no Ubidots).
-- Responda em portugues brasileiro, direto. Numeros com virgula decimal (ex.: 71,3% nao 71.3%).
-- Use markdown para estruturar (cabecalhos, tabelas, listas).
-- Apos reportar numeros: explique brevemente o que significam.
+- Use as tools para buscar dados reais. NUNCA invente números.
+- Plataforma padrão: se o usuário não especificar, use 'ubidots' (a principal).
+- Período padrão: se não especificar, use '-24h' até 'now' (últimas 24 horas).
+- Variável de ciclo padrão: 'ciclo' (no Ubidots).
+- Responda em português brasileiro, direto. Números com vírgula decimal (ex.: 71,3% em vez de 71.3%).
+- Use markdown para estruturar (cabeçalhos, tabelas, listas).
+- Após reportar números, explique brevemente o que eles significam.
 
 NOMES vs LABELS (importante):
-- O usuario fala em portugues natural ("injetora 82", "linha A", "injequaly inj 80"), mas as APIs usam labels curtos ("inj82").
-- As tools JA fazem o mapeamento automatico. Voce pode passar "injetora 82" diretamente como argumento 'device'.
-- Se a tool retornar erro com sugestoes, use a sugestao certa e tente de novo (nao pergunte ao usuario).
+- O usuário fala em português natural ("injetora 82", "linha A", "injequaly inj 80"), mas as APIs usam labels curtos ("inj82").
+- As tools JÁ fazem o mapeamento automático. Você pode passar "injetora 82" diretamente como argumento 'device'.
+- Se a tool retornar erro com sugestões, use a sugestão correta e tente de novo (não pergunte ao usuário).
 
-PERIODOS (formatos aceitos):
+PERÍODOS (formatos aceitos):
 - 'YYYY-MM-DD' (dia inteiro)
-- 'YYYY-MM-DDTHH:MM' (hora especifica)
+- 'YYYY-MM-DDTHH:MM' (hora específica)
 - 'now' ou 'agora' (instante atual)
-- '-30m', '-2h', '-1d' (delta a partir de agora) - PREFIRA esses para frases tipo "ultimas X horas"
-- "Hoje" => start='YYYY-MM-DDT00:00' do dia de hoje, end='now'
-- "Ontem" => start='YYYY-MM-DD' do dia anterior, end do mesmo dia 23:59
-- "Ultimo ciclo / ultima leitura" => use periodo curto como '-30m' a 'now' e pegue o ultimo do sample_last_10
+- '-30m', '-2h', '-1d' (delta a partir de agora) — PREFIRA estes para frases como "últimas X horas"
+- "Hoje" → start='YYYY-MM-DDT00:00' do dia de hoje, end='now'
+- "Ontem" → start='YYYY-MM-DD' do dia anterior, end do mesmo dia 23:59
+- "Último ciclo / última leitura" → use período curto como '-30m' até 'now' e pegue o último de sample_last_10
 
 OEE:
-- 'ciclo ideal' (segundos) eh parametro do molde/peca - SEMPRE pergunte ao usuario (so pergunte se ele nao informou).
-- Refugo default = 0 (se nao informado).
-- compute_oee com outlier_factor=3 por padrao.
-- Apos calcular: indique qual KPI eh o gargalo (A, P ou Q mais baixo) e sugira investigacao.
+- 'ciclo ideal' (segundos) é parâmetro do molde/peça — SEMPRE pergunte ao usuário se ele não informou.
+- Refugo padrão = 0 (se não informado).
+- compute_oee com outlier_factor=3 por padrão.
+- Após calcular, indique qual KPI é o gargalo (A, P ou Q mais baixo) e sugira investigação.
 
-RELATORIOS (PDF/CSV):
-- Quando o usuario pedir um relatorio/PDF/CSV/exportar/baixar, chame generate_report_link.
-- A tool devolve um botao de download que aparece na resposta. Mencione o botao no texto.
-- Para OEE: tipo='oee' (precisa ciclo_ideal). Para variavel simples: tipo='relatorio'.
+RELATÓRIOS (PDF/CSV):
+- Quando o usuário pedir um relatório/PDF/CSV/exportar/baixar, chame generate_report_link.
+- A tool devolve um botão de download que aparece na resposta. Mencione o botão no texto.
+- Para OEE: tipo='oee' (precisa de ciclo_ideal). Para variável simples: tipo='relatorio'.
 """
 
 
@@ -67,8 +67,8 @@ async def run_turn(
     history: list[Message],
     user_message: str,
 ) -> AsyncIterator[dict]:
-    """Roda um turno (uma mensagem do usuario). Pode envolver varias chamadas
-    de tool ate o LLM dar resposta final.
+    """Roda um turno (uma mensagem do usuário). Pode envolver várias chamadas
+    de tool até o LLM dar a resposta final.
 
     Yield eventos:
       {"type": "text", "text": "..."}        - chunk de texto da resposta
@@ -80,10 +80,9 @@ async def run_turn(
     """
     provider = get_provider(provider_id)
     if not provider:
-        yield {"type": "error", "error": f"Provider '{provider_id}' nao configurado"}
+        yield {"type": "error", "error": f"Provedor '{provider_id}' não configurado"}
         return
 
-    # Adiciona a mensagem do usuario ao historico em memoria
     messages = list(history) + [Message(role="user", text=user_message)]
     tools = all_tool_defs()
     system = system_prompt()
@@ -108,21 +107,17 @@ async def run_turn(
         if error:
             return
 
-        # Adiciona a resposta do assistant ao historico (mesmo se vazio mas com tool_calls)
         messages.append(Message(role="assistant", text=accumulated_text, tool_calls=pending_tool_calls))
 
-        # Se nao houve tool calls, terminou
         if not pending_tool_calls:
             yield {"type": "done", "final_text": accumulated_text, "messages": _serialize_messages(messages[len(history):])}
             return
 
-        # Executa cada tool e adiciona resultado ao historico
         for tc in pending_tool_calls:
             result_json = await execute_tool(tc.name, tc.arguments)
             preview = result_json[:300] + ("..." if len(result_json) > 300 else "")
             yield {"type": "tool_result", "name": tc.name, "result_preview": preview}
 
-            # Se a tool gerou um link de relatorio, propaga pro frontend
             if tc.name == "generate_report_link":
                 try:
                     data = json.loads(result_json)
@@ -138,12 +133,11 @@ async def run_turn(
                 tool_name=tc.name,
             ))
 
-    # Excedeu iteracoes
-    yield {"type": "error", "error": f"Excedeu {MAX_ITERATIONS} iteracoes de tool calls"}
+    yield {"type": "error", "error": f"Excedido limite de {MAX_ITERATIONS} iterações de tool calls"}
 
 
 def _serialize_messages(msgs: list[Message]) -> list[dict]:
-    """Serializa pra salvar no SQLite. Inclui apenas mensagens novas do turno."""
+    """Serializa para salvar no SQLite. Inclui apenas mensagens novas do turno."""
     out = []
     for m in msgs:
         d = {"role": m.role, "text": m.text}
@@ -158,12 +152,11 @@ def _serialize_messages(msgs: list[Message]) -> list[dict]:
 
 
 def deserialize_messages(stored: list[dict]) -> list[Message]:
-    """Reconstroi list[Message] do que foi salvo."""
+    """Reconstrói list[Message] do que foi salvo."""
     out = []
     for d in stored:
         content = d.get("content", d)
         if isinstance(content, str):
-            # mensagem antiga (user puro)
             out.append(Message(role=d["role"], text=content))
             continue
         if isinstance(content, dict):

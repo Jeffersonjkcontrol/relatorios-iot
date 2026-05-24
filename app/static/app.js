@@ -8,6 +8,7 @@
     jkcontrol: 'JKControl',
     ubidots: 'Ubidots Industrial',
   };
+  // Mensagens em pt-BR
 
   /* ---------- Platform ---------- */
   function currentPlatform() {
