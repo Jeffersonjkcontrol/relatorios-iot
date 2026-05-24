@@ -229,6 +229,15 @@ async def t_compare_devices(platform: str, devices: list[str], variable: str,
     return {"variable": variable, "start": start, "end": end, "comparison": results}
 
 
+def _to_iso_for_form(when: str) -> str:
+    """Converte qualquer formato aceito (incluindo '-1h', 'now') para ISO
+    'YYYY-MM-DDTHH:MM' que o endpoint /relatorio aceita."""
+    if not when:
+        return ""
+    ms = _parse_when(when)
+    return datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%dT%H:%M")
+
+
 async def t_generate_report_link(tipo: str, platform: str, device: str, variable: str,
                                   start: str = "", end: str = "",
                                   formato: str = "pdf",
@@ -236,12 +245,22 @@ async def t_generate_report_link(tipo: str, platform: str, device: str, variable
                                   refugo: int = 0,
                                   outlier_factor: float = 3.0,
                                   **_) -> dict:
-    """Gera URL absoluta que o frontend renderiza como botao de download.
-    tipo: 'relatorio' (PDF/CSV de variavel) ou 'oee' (PDF OEE)."""
+    """Gera URL absoluta que o frontend renderiza como botão de download.
+    tipo: 'relatorio' (PDF/CSV de variável) ou 'oee' (PDF OEE).
+    Converte start/end de qualquer formato (-1h, now, etc.) para ISO."""
+    # Resolve device (aceita "injetora 80" -> "inj80")
+    try:
+        device_resolved = await _resolve_device(platform, device)
+    except Exception:
+        device_resolved = device  # se não conseguir, manda original
+
+    start_iso = _to_iso_for_form(start)
+    end_iso = _to_iso_for_form(end)
+
     if tipo == "oee":
         params = {
-            "platform": platform, "device": device, "variable": variable,
-            "start": start, "end": end,
+            "platform": platform, "device": device_resolved, "variable": variable,
+            "start": start_iso, "end": end_iso,
             "ciclo_ideal": str(ciclo_ideal or 0),
             "refugo": str(refugo),
             "outlier_factor": str(outlier_factor),
@@ -251,19 +270,19 @@ async def t_generate_report_link(tipo: str, platform: str, device: str, variable
             "method": "POST",
             "url": "/relatorio_oee",
             "params": params,
-            "label": f"Baixar PDF de OEE — {device}",
+            "label": f"Baixar PDF de OEE — {device_resolved}",
         }
     else:
         params = {
-            "platform": platform, "device": device, "variable": variable,
-            "start": start, "end": end, "formato": formato,
+            "platform": platform, "device": device_resolved, "variable": variable,
+            "start": start_iso, "end": end_iso, "formato": formato,
         }
         return {
             "tipo": "relatorio",
             "method": "POST",
             "url": "/relatorio",
             "params": params,
-            "label": f"Baixar {formato.upper()} — {device}/{variable}",
+            "label": f"Baixar {formato.upper()} — {device_resolved}/{variable}",
         }
 
 
