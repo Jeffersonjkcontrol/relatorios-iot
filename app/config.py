@@ -4,11 +4,24 @@ from urllib.parse import urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _clean(s: str) -> str:
+    """Remove espaços e aspas (simples/duplas) das pontas. Usuários costumam colar
+    valores entre aspas no .env por engano e o pydantic-settings não tira."""
+    if not s:
+        return s
+    s = s.strip()
+    for q in ('"', "'"):
+        if len(s) >= 2 and s.startswith(q) and s.endswith(q):
+            s = s[1:-1].strip()
+    return s
+
+
 def _strip_api_suffix(url: str) -> str:
     """Reduz qualquer URL Ubidots a `https://host` (descarta /api/v1.6, /api/v2.0,
     paths, querystrings — assim o usuario pode colar tanto o host quanto uma URL
     de exemplo com filtros)."""
-    p = urlparse(url.strip())
+    url = _clean(url)
+    p = urlparse(url)
     if not p.scheme or not p.netloc:
         return url.rstrip("/")
     return f"{p.scheme}://{p.netloc}"
@@ -32,9 +45,9 @@ class Settings(BaseSettings):
 
     def platform(self, name: str) -> tuple[str, str]:
         if name == "jkcontrol":
-            return _strip_api_suffix(self.jkcontrol_base_url), self.jkcontrol_token
+            return _strip_api_suffix(self.jkcontrol_base_url), _clean(self.jkcontrol_token)
         if name == "ubidots":
-            return _strip_api_suffix(self.ubidots_base_url), self.ubidots_token
+            return _strip_api_suffix(self.ubidots_base_url), _clean(self.ubidots_token)
         raise ValueError(f"Plataforma desconhecida: {name}")
 
 
