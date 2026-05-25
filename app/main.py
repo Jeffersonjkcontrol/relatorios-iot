@@ -237,6 +237,36 @@ async def api_live(platform: str, variable: str = "ciclo"):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+# Cache em memória do display name por plataforma (expira em 1h)
+_PLATFORM_DISPLAY_CACHE: dict[str, tuple[float, dict]] = {}
+_DISPLAY_TTL_S = 3600
+
+
+@app.get("/api/platform-display")
+async def api_platform_display(platform: str):
+    """Devolve {label, name, fallback} para o badge da plataforma.
+    Para Ubidots: nome da organização (ex.: 'Injequaly').
+    Para JKControl: o label padrão configurado em PLATFORMS."""
+    import time
+    fallback_label = next((p["label"] for p in PLATFORMS if p["id"] == platform), platform)
+    now = time.time()
+    if platform in _PLATFORM_DISPLAY_CACHE:
+        ts, data = _PLATFORM_DISPLAY_CACHE[platform]
+        if now - ts < _DISPLAY_TTL_S:
+            return data
+    try:
+        client = _client(platform)
+        info = await client.get_organization_display()
+    except Exception:
+        info = None
+    if info and info.get("name"):
+        result = {"display": info["name"], "label": info.get("label", ""), "fallback": fallback_label, "source": "organization"}
+    else:
+        result = {"display": fallback_label, "label": platform, "fallback": fallback_label, "source": "platform"}
+    _PLATFORM_DISPLAY_CACHE[platform] = (now, result)
+    return result
+
+
 @app.get("/moldes", response_class=HTMLResponse)
 async def page_moldes(request: Request):
     return templates.TemplateResponse("moldes.html", tctx(request, current_page="moldes"))

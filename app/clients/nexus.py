@@ -31,6 +31,11 @@ class NexusCoreClient:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
 
+    async def get_organization_display(self) -> dict[str, str] | None:
+        """NEXUS CORE: o nome da organização não vem na API; retorna None
+        para manter o label padrão da plataforma."""
+        return None
+
     async def _get(self, url: str, params: dict[str, Any] | None = None) -> Any:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.get(url, headers=self._headers(), params=params)

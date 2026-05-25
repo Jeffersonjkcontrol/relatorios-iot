@@ -20,11 +20,23 @@
     updateActiveBadge();
   }
 
-  function updateActiveBadge() {
+  async function updateActiveBadge() {
     const el = document.getElementById('active-platform');
     if (!el) return;
     const id = currentPlatform();
-    el.textContent = PLATFORM_LABELS[id] || id;
+    // Mostra fallback imediato (do cache local) enquanto busca o display
+    const cached = localStorage.getItem(`platform_display_${id}`);
+    el.textContent = cached || PLATFORM_LABELS[id] || id;
+    try {
+      const r = await fetch(`/api/platform-display?platform=${encodeURIComponent(id)}`);
+      if (r.ok) {
+        const d = await r.json();
+        if (d.display) {
+          el.textContent = d.display;
+          localStorage.setItem(`platform_display_${id}`, d.display);
+        }
+      }
+    } catch {}
   }
 
   /* ---------- Theme ---------- */

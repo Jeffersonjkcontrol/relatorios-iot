@@ -56,6 +56,31 @@ class UbidotsClient:
         return results
 
     # ----- v2.0 -----
+    async def get_organization_display(self) -> dict[str, str] | None:
+        """Retorna {label, name} da organização principal (1ª da lista).
+        Usado pra mostrar 'Injequaly' em vez de 'Ubidots Industrial' na UI."""
+        try:
+            data = await self._get(f"{self.v2}/organizations/", {"page_size": 1})
+            results = data.get("results") or []
+            if results:
+                o = results[0]
+                return {"label": o.get("label", ""), "name": o.get("name") or o.get("label", "")}
+        except httpx.HTTPStatusError:
+            pass
+        # Fallback: pega do primeiro device
+        try:
+            data = await self._get(
+                f"{self.v2}/devices/",
+                {"fields": "organization", "page_size": 1},
+            )
+            results = data.get("results") or []
+            if results and isinstance(results[0].get("organization"), dict):
+                o = results[0]["organization"]
+                return {"label": o.get("label", ""), "name": o.get("name") or o.get("label", "")}
+        except httpx.HTTPStatusError:
+            pass
+        return None
+
     async def list_device_groups(self) -> list[dict[str, Any]]:
         url = f"{self.v2}/device_groups/"
         params = {"fields": "id,label,name", "page_size": 100}
