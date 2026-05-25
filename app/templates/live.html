@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Ao vivo{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard ao vivo</h1>
+  <p>Status das máquinas em tempo quase-real (atualiza a cada 10 segundos).</p>
+</div>
+
+<div class="card live-toolbar">
+  <label style="flex-direction: row; align-items: center; gap: 8px;">
+    Variável:
+    <select id="live-variable" style="height: 36px; width: 160px;">
+      <option value="ciclo" selected>ciclo</option>
+      <option value="parada">parada</option>
+      <option value="producao">producao</option>
+      <option value="auto">auto</option>
+    </select>
+  </label>
+  <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
+    <span class="status" id="live-status"></span>
+    <button type="button" class="btn-secondary" id="live-pause">Pausar</button>
+  </div>
+</div>
+
+<div class="live-grid" id="live-grid">
+  <div class="live-loading">Carregando primeira leitura…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const { jget, currentPlatform } = window.app;
+  const $grid = document.getElementById('live-grid');
+  const $varSel = document.getElementById('live-variable');
+  const $status = document.getElementById('live-status');
+  const $btnPause = document.getElementById('live-pause');
+  let paused = false;
+  let timer = null;
+
+  function fmtN(v, dec = 2) {
+    if (v === null || v === undefined) return '—';
+    return Number(v).toFixed(dec).replace('.', ',');
+  }
+  function trendIcon(t) {
+    return { subindo: '↑', descendo: '↓', estavel: '→' }[t] || '';
+  }
+  function statusBadge(s) {
+    const labels = { ativo: '● Ativo', ocioso: '○ Ocioso', parado: '✕ Parado', offline: '✕ Offline', erro: '! Erro' };
+    return `<span class="live-status-badge live-${s}">${labels[s] || s}</span>`;
+  }
+  function fmtAgo(min) {
+    if (min === null || min === undefined) return '—';
+    if (min < 1) return 'agora';
+    if (min < 60) return `${Math.round(min)} min atrás`;
+    return `${(min/60).toFixed(1).replace('.', ',')} h atrás`;
+  }
+
+  function render(snapshot) {
+    if (!snapshot.length) {
+      $grid.innerHTML = '<div class="live-loading">Sem dispositivos.</div>';
+      return;
+    }
+    $grid.innerHTML = snapshot.map(d => `
+      <div class="live-card live-card-${d.status}">
+        <div class="live-card-head">
+          <div>
+            <div class="live-card-name">${d.name}</div>
+            <div class="live-card-label">${d.device}</div>
+          </div>
+          ${statusBadge(d.status)}
+        </div>
+        ${d.error ? `<div class="live-error">${d.error}</div>` : `
+        <div class="live-card-val">
+          ${fmtN(d.last_value)}<span class="live-card-unit">${d.unit || ''}</span>
+          <span class="live-trend">${trendIcon(d.trend)}</span>
+        </div>
+        <div class="live-card-meta">
+          <span>Média ${fmtN(d.mean_recent)} ${d.unit || ''}</span>
+          <span>${d.count_recent} amostras</span>
+        </div>
+        <div class="live-card-foot">
+          Última: ${fmtAgo(d.minutes_since_last)}
+          ${d.molde ? `<br>Molde: <code>${d.molde}</code>` : ''}
+        </div>
+        `}
+      </div>
+    `).join('');
+  }
+
+  async function refresh() {
+    if (paused) return;
+    try {
+      const data = await jget(`/api/live?platform=${encodeURIComponent(currentPlatform())}&variable=${encodeURIComponent($varSel.value)}`);
+      render(data);
+      $status.textContent = `Atualizado ${new Date().toLocaleTimeString('pt-BR')}`;
+    } catch (e) {
+      $status.textContent = `Erro: ${e.message}`;
+    }
+  }
+
+  function scheduleNext() {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      await refresh();
+      scheduleNext();
+    }, 10000);
+  }
+
+  $btnPause.addEventListener('click', () => {
+    paused = !paused;
+    $btnPause.textContent = paused ? 'Continuar' : 'Pausar';
+    if (!paused) refresh();
+  });
+  $varSel.addEventListener('change', refresh);
+
+  refresh().then(scheduleNext);
+</script>
+{% endblock %}

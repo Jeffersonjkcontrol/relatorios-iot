@@ -10,7 +10,8 @@ from fastapi.templating import Jinja2Templates
 
 import json
 
-from fastapi.responses import StreamingResponse
+from fastapi import Depends
+from fastapi.responses import StreamingResponse, RedirectResponse
 
 from app.config import PLATFORMS, settings
 from app.clients import PlatformClient, date_to_ms, make_client
@@ -22,6 +23,16 @@ from app.transforms import apply_value, format_value, get_transform
 from app.ai import db as ai_db
 from app.ai.agent import run_turn, deserialize_messages
 from app.ai.providers import list_providers
+from app.live import get_live_snapshot
+from app.moldes import aggregate_moldes
+from app.auth import (
+    User, current_user, require_user, require_gestor,
+    create_session_cookie, COOKIE_NAME,
+)
+from app.auth.db import (
+    list_users, create_user, delete_user as auth_delete_user,
+    change_password, get_user_by_username, verify_password,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -40,44 +51,203 @@ def _client(platform_id: str) -> PlatformClient:
     return make_client(platform_id, base_url, token)
 
 
+def tctx(request: Request, **extra) -> dict:
+    """Contexto-base para todas as templates: inclui current_user e platforms."""
+    base = {
+        "request": request,
+        "current_user": current_user(request),
+        "platforms": PLATFORMS,
+        "year": datetime.now().year,
+    }
+    base.update(extra)
+    return base
+
+
+# ============================================================
+# Middleware: redireciona pra /login se não autenticado
+# ============================================================
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    public_paths = {"/login", "/logout", "/change-password"}
+    is_static = path.startswith("/static/")
+    if path in public_paths or is_static:
+        return await call_next(request)
+
+    user = current_user(request)
+    if not user:
+        # API: 401 JSON; páginas: redireciona pra login
+        if path.startswith("/api/") or request.method != "GET":
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "Não autenticado"}, status_code=401)
+        return RedirectResponse(url=f"/login?next={path}", status_code=303)
+
+    if user.must_change_password and path != "/change-password":
+        return RedirectResponse(url="/login?must_change=1", status_code=303)
+
+    return await call_next(request)
+
+
+# ============================================================
+# Auth: login / logout / trocar senha
+# ============================================================
+@app.get("/login", response_class=HTMLResponse)
+async def page_login(request: Request, must_change: int = 0):
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "must_change": bool(must_change),
+        "error": request.query_params.get("error"),
+        "info": request.query_params.get("info"),
+    })
+
+
+@app.post("/login")
+async def do_login(
+    username: str = Form(...),
+    password: str = Form(...),
+    next: str = Form("/"),
+):
+    res = get_user_by_username(username)
+    if not res:
+        return RedirectResponse(url="/login?error=Usuário+ou+senha+inválidos", status_code=303)
+    user, pwd_hash = res
+    if not verify_password(password, pwd_hash):
+        return RedirectResponse(url="/login?error=Usuário+ou+senha+inválidos", status_code=303)
+
+    if user.must_change_password:
+        # cria sessão temporária só pra permitir troca de senha
+        resp = RedirectResponse(url="/login?must_change=1", status_code=303)
+        resp.set_cookie(COOKIE_NAME, create_session_cookie(user.username),
+                        httponly=True, samesite="lax", max_age=600)
+        return resp
+
+    resp = RedirectResponse(url=next or "/", status_code=303)
+    resp.set_cookie(COOKIE_NAME, create_session_cookie(user.username),
+                    httponly=True, samesite="lax", max_age=7*24*3600)
+    return resp
+
+
+@app.post("/change-password")
+async def do_change_password(
+    request: Request,
+    new_password: str = Form(...),
+    confirm: str = Form(...),
+):
+    user = current_user(request)
+    if not user:
+        return RedirectResponse(url="/login?error=Sessão+expirada", status_code=303)
+    if new_password != confirm:
+        return RedirectResponse(url="/login?must_change=1&error=Senhas+não+conferem", status_code=303)
+    try:
+        change_password(user.id, new_password)
+    except ValueError as e:
+        return RedirectResponse(url=f"/login?must_change=1&error={str(e)}", status_code=303)
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(COOKIE_NAME, create_session_cookie(user.username),
+                    httponly=True, samesite="lax", max_age=7*24*3600)
+    return resp
+
+
+@app.get("/logout")
+@app.post("/logout")
+async def do_logout():
+    resp = RedirectResponse(url="/login?info=Você+saiu+do+sistema", status_code=303)
+    resp.delete_cookie(COOKIE_NAME)
+    return resp
+
+
+# ============================================================
+# Gestão de usuários (somente gestor)
+# ============================================================
+@app.get("/users", response_class=HTMLResponse)
+async def page_users(request: Request, user: User = Depends(require_gestor)):
+    users = list_users()
+    users_data = [{
+        "id": u.id, "username": u.username, "role": u.role,
+        "must_change_password": u.must_change_password,
+        "created_at_fmt": datetime.fromtimestamp(u.created_at).strftime("%d/%m/%Y %H:%M"),
+    } for u in users]
+    return templates.TemplateResponse("users.html", tctx(
+        request, current_page="users", users=users_data, current=user,
+        msg=request.query_params.get("msg"),
+        error=request.query_params.get("error"),
+    ))
+
+
+@app.post("/users")
+async def create_user_route(
+    username: str = Form(...),
+    password: str = Form(...),
+    role: str = Form(...),
+    user: User = Depends(require_gestor),
+):
+    try:
+        create_user(username, password, role)
+    except ValueError as e:
+        return RedirectResponse(url=f"/users?error={e}", status_code=303)
+    return RedirectResponse(url=f"/users?msg=Usuário+criado", status_code=303)
+
+
+@app.post("/users/{uid}/delete")
+async def delete_user_route(uid: int, user: User = Depends(require_gestor)):
+    if uid == user.id:
+        return RedirectResponse(url="/users?error=Você+não+pode+excluir+a+si+mesmo", status_code=303)
+    auth_delete_user(uid)
+    return RedirectResponse(url="/users?msg=Usuário+excluído", status_code=303)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def page_relatorios(request: Request):
     return templates.TemplateResponse(
-        "relatorios.html",
-        {"request": request, "platforms": PLATFORMS, "year": datetime.now().year, "current_page": "relatorios"},
+        "relatorios.html", tctx(request, current_page="relatorios"),
     )
 
 
 @app.get("/oee", response_class=HTMLResponse)
 async def page_oee(request: Request):
     return templates.TemplateResponse(
-        "oee.html",
-        {"request": request, "platforms": PLATFORMS, "year": datetime.now().year, "current_page": "oee"},
+        "oee.html", tctx(request, current_page="oee"),
     )
 
 
 @app.get("/config", response_class=HTMLResponse)
-async def page_config(request: Request):
+async def page_config(request: Request, user: User = Depends(require_gestor)):
     return templates.TemplateResponse(
-        "config.html",
-        {
-            "request": request, "platforms": PLATFORMS, "year": datetime.now().year,
-            "current_page": "config",
-            "ai_providers": list_providers(),
-        },
+        "config.html", tctx(request, current_page="config", ai_providers=list_providers()),
     )
 
 
 @app.get("/ai", response_class=HTMLResponse)
 async def page_ai(request: Request):
     return templates.TemplateResponse(
-        "ai.html",
-        {
-            "request": request, "platforms": PLATFORMS, "year": datetime.now().year,
-            "current_page": "ai",
-            "ai_providers": list_providers(),
-        },
+        "ai.html", tctx(request, current_page="ai", ai_providers=list_providers()),
     )
+
+
+@app.get("/live", response_class=HTMLResponse)
+async def page_live(request: Request):
+    return templates.TemplateResponse("live.html", tctx(request, current_page="live"))
+
+
+@app.get("/api/live")
+async def api_live(platform: str, variable: str = "ciclo"):
+    try:
+        return await get_live_snapshot(platform, variable)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/moldes", response_class=HTMLResponse)
+async def page_moldes(request: Request):
+    return templates.TemplateResponse("moldes.html", tctx(request, current_page="moldes"))
+
+
+@app.get("/api/moldes")
+async def api_moldes(platform: str, variable: str = "ciclo", days: int = 7):
+    try:
+        return await aggregate_moldes(platform, variable, days)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 # ---------- AI API ----------

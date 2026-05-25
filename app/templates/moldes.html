@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Moldes{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Análise de moldes</h1>
+  <p>Histórico de produção agrupado por molde (extraído do contexto das leituras de ciclo).</p>
+</div>
+
+<div class="card">
+  <form id="moldes-form" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
+    <label style="flex: 0 0 120px;">
+      Período (dias)
+      <select id="moldes-days">
+        <option value="1">Hoje (24h)</option>
+        <option value="7" selected>Últimos 7 dias</option>
+        <option value="30">Últimos 30 dias</option>
+        <option value="90">Últimos 90 dias</option>
+      </select>
+    </label>
+    <label style="flex: 0 0 140px;">
+      Variável
+      <input type="text" id="moldes-var" value="ciclo">
+    </label>
+    <button type="button" class="btn-primary" id="moldes-btn">Atualizar</button>
+    <span class="status" id="moldes-status" style="margin-left: auto;"></span>
+  </form>
+</div>
+
+<div id="moldes-summary"></div>
+<div id="moldes-list"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const { jget, currentPlatform } = window.app;
+  const $btn = document.getElementById('moldes-btn');
+  const $status = document.getElementById('moldes-status');
+  const $summary = document.getElementById('moldes-summary');
+  const $list = document.getElementById('moldes-list');
+  const $days = document.getElementById('moldes-days');
+  const $var = document.getElementById('moldes-var');
+
+  function fmtN(v, dec = 2) {
+    if (v === null || v === undefined) return '—';
+    return Number(v).toFixed(dec).replace('.', ',');
+  }
+  function pct(v) {
+    if (v === null || v === undefined) return '—';
+    const sign = v >= 0 ? '+' : '';
+    return sign + v.toFixed(1).replace('.', ',') + '%';
+  }
+  function fmtDate(ms) {
+    return ms ? new Date(ms).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+  }
+  function desvioColor(p) {
+    if (p === null || p === undefined) return '';
+    if (Math.abs(p) < 5) return 'color: var(--success);';
+    if (Math.abs(p) < 15) return 'color: var(--warning);';
+    return 'color: var(--danger);';
+  }
+
+  async function refresh() {
+    $btn.disabled = true;
+    $status.textContent = 'Carregando (pode demorar 10-30s)…';
+    $list.innerHTML = '';
+    try {
+      const d = await jget(`/api/moldes?platform=${encodeURIComponent(currentPlatform())}&days=${$days.value}&variable=${encodeURIComponent($var.value)}`);
+      render(d);
+      $status.textContent = `${d.n_moldes_distintos} moldes em ${d.total_devices_consultados} máquinas`;
+    } catch (e) {
+      $status.textContent = `Erro: ${e.message}`;
+    } finally {
+      $btn.disabled = false;
+    }
+  }
+
+  function render(d) {
+    $summary.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat"><span class="lbl">Período</span><span class="val">${d.days} dias</span></div>
+        <div class="stat"><span class="lbl">Máquinas</span><span class="val">${d.total_devices_consultados}</span></div>
+        <div class="stat"><span class="lbl">Peças totais</span><span class="val">${d.total_pecas.toLocaleString('pt-BR')}</span></div>
+        <div class="stat"><span class="lbl">Moldes distintos</span><span class="val">${d.n_moldes_distintos}</span></div>
+        <div class="stat"><span class="lbl">Sem molde no contexto</span><span class="val">${d.pecas_sem_molde}</span></div>
+      </div>
+    `;
+
+    if (!d.moldes.length) {
+      $list.innerHTML = '<div class="card"><p>Nenhum molde encontrado no período.</p></div>';
+      return;
+    }
+
+    $list.innerHTML = '<div class="card"><table class="moldes-table"><thead><tr>' +
+      '<th>Molde</th><th>Código</th><th>Peças</th><th>Máquinas</th>' +
+      '<th>Ciclo ideal</th><th>Ciclo médio</th><th>Desvio</th><th>Último uso</th>' +
+      '</tr></thead><tbody>' +
+      d.moldes.map((m, i) => `
+        <tr>
+          <td><strong>${m.nome || '—'}</strong></td>
+          <td><code>${m.codigo || '—'}</code></td>
+          <td class="num">${m.pecas_total.toLocaleString('pt-BR')}</td>
+          <td class="num" title="${m.devices.map(d => d.label + ': ' + d.pecas).join(', ')}">${m.n_devices}</td>
+          <td class="num">${fmtN(m.ciclo_esperado_s, 1)} s</td>
+          <td class="num">${fmtN(m.ciclo_medio_s, 2)} s</td>
+          <td class="num" style="${desvioColor(m.desvio_pct)} font-weight: 600;">${pct(m.desvio_pct)}</td>
+          <td class="num">${fmtDate(m.last_ts_ms)}</td>
+        </tr>
+      `).join('') + '</tbody></table></div>';
+  }
+
+  $btn.addEventListener('click', refresh);
+  refresh();
+</script>
+{% endblock %}

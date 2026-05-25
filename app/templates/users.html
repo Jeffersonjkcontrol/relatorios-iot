@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Usuários{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Usuários</h1>
+  <p>Gerencie quem tem acesso ao sistema. Apenas gestores podem criar/remover usuários.</p>
+</div>
+
+{% if msg %}<div class="card" style="background: var(--success-soft); color: var(--success-text); border-color: var(--success);">{{ msg }}</div>{% endif %}
+{% if error %}<div class="card warnings">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Usuários cadastrados</h2>
+  <table style="width: 100%; border-collapse: collapse; font-size: var(--fs-md);">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+        <th style="padding: 10px;">Usuário</th>
+        <th style="padding: 10px;">Papel</th>
+        <th style="padding: 10px;">Criado em</th>
+        <th style="padding: 10px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 10px;"><strong>{{ u.username }}</strong>{% if u.must_change_password %} <span class="badge">precisa trocar senha</span>{% endif %}</td>
+        <td style="padding: 10px;">{{ 'Gestor' if u.role == 'gestor' else 'Operador' }}</td>
+        <td style="padding: 10px; color: var(--text-subtle); font-size: var(--fs-sm);">{{ u.created_at_fmt }}</td>
+        <td style="padding: 10px; text-align: right;">
+          {% if u.id != current.id %}
+          <form method="post" action="/users/{{ u.id }}/delete" style="display:inline;" onsubmit="return confirm('Excluir {{ u.username }}?');">
+            <button type="submit" class="btn-ghost" style="color: var(--danger);">Excluir</button>
+          </form>
+          {% else %}
+          <span style="color: var(--text-subtle); font-size: var(--fs-sm);">(você)</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Criar novo usuário</h2>
+  <form method="post" action="/users">
+    <div class="grid">
+      <label>
+        Usuário
+        <input type="text" name="username" required minlength="3" placeholder="ex.: operador1">
+      </label>
+      <label>
+        Senha
+        <input type="password" name="password" required minlength="4">
+      </label>
+      <label>
+        Papel
+        <select name="role" required>
+          <option value="operador">Operador (somente leitura)</option>
+          <option value="gestor">Gestor (acesso total)</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn-primary">Criar usuário</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
