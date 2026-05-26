@@ -177,6 +177,43 @@ async def do_logout():
 # ============================================================
 # Gestão de usuários (somente gestor)
 # ============================================================
+# ============================================================
+# /perfil - qualquer usuário trocar a própria senha
+# ============================================================
+@app.get("/perfil", response_class=HTMLResponse)
+async def page_perfil(request: Request, user: User = Depends(require_user)):
+    created_at_fmt = datetime.fromtimestamp(user.created_at).strftime("%d/%m/%Y %H:%M")
+    return templates.TemplateResponse("perfil.html", tctx(
+        request, current_page="perfil",
+        created_at_fmt=created_at_fmt,
+        msg=request.query_params.get("msg"),
+        error=request.query_params.get("error"),
+    ))
+
+
+@app.post("/perfil/senha")
+async def perfil_change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm: str = Form(...),
+    user: User = Depends(require_user),
+):
+    # Confirma senha atual
+    res = get_user_by_username(user.username)
+    if not res or not verify_password(current_password, res[1]):
+        return RedirectResponse(url="/perfil?error=Senha+atual+incorreta", status_code=303)
+    if new_password != confirm:
+        return RedirectResponse(url="/perfil?error=Senhas+não+conferem", status_code=303)
+    if current_password == new_password:
+        return RedirectResponse(url="/perfil?error=A+nova+senha+precisa+ser+diferente+da+atual", status_code=303)
+    try:
+        change_password(user.id, new_password)
+    except ValueError as e:
+        return RedirectResponse(url=f"/perfil?error={e}", status_code=303)
+    return RedirectResponse(url="/perfil?msg=Senha+atualizada+com+sucesso", status_code=303)
+
+
 @app.get("/users", response_class=HTMLResponse)
 async def page_users(request: Request, user: User = Depends(require_gestor)):
     users = list_users()

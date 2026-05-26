@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Meu perfil{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Meu perfil</h1>
+  <p>Informações da sua conta e troca de senha.</p>
+</div>
+
+{% if msg %}<div class="card" style="background: var(--success-soft); color: var(--success-text); border-color: var(--success);">{{ msg }}</div>{% endif %}
+{% if error %}<div class="card warnings">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Conta</h2>
+  <div class="stats-grid">
+    <div class="stat"><span class="lbl">Usuário</span><span class="val">{{ current_user.username }}</span></div>
+    <div class="stat"><span class="lbl">Papel</span><span class="val">{{ 'Gestor' if current_user.role == 'gestor' else 'Operador' }}</span></div>
+    <div class="stat"><span class="lbl">Criado em</span><span class="val">{{ created_at_fmt }}</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Trocar senha</h2>
+  <p class="config-desc">Por segurança, é preciso informar a senha atual antes de definir a nova.</p>
+  <form method="post" action="/perfil/senha">
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); max-width: 720px;">
+      <label>
+        Senha atual
+        <input type="password" name="current_password" required autocomplete="current-password">
+      </label>
+      <label>
+        Nova senha
+        <input type="password" name="new_password" required minlength="4" autocomplete="new-password">
+        <small class="hint">mínimo 4 caracteres</small>
+      </label>
+      <label>
+        Confirmar nova senha
+        <input type="password" name="confirm" required minlength="4" autocomplete="new-password">
+      </label>
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn-primary">Salvar nova senha</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

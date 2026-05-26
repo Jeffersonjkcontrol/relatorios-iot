@@ -238,9 +238,13 @@ a { color: var(--primary); }
   height: 32px;
   background: rgba(255,255,255,.15);
   color: white;
+  text-decoration: none;
   border-radius: var(--radius-full);
   font-size: var(--fs-sm);
+  transition: background-color .12s;
+  cursor: pointer;
 }
+.user-pill:hover { background: rgba(255,255,255,.25); }
 .user-pill strong { font-weight: 600; }
 .user-role {
   display: inline-flex;
