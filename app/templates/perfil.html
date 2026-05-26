@@ -20,6 +20,26 @@
 </div>
 
 <div class="card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Meus dados</h2>
+  <form method="post" action="/perfil/info">
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); max-width: 720px;">
+      <label>
+        Nome completo
+        <input type="text" name="full_name" maxlength="100" value="{{ current_user.full_name or '' }}" placeholder="Ex.: Jefferson Piccirillo">
+      </label>
+      <label>
+        E-mail
+        <input type="email" name="email" maxlength="120" value="{{ current_user.email or '' }}" placeholder="seu@email.com">
+        <small class="hint">opcional</small>
+      </label>
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn-secondary">Salvar dados</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
   <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Trocar senha</h2>
   <p class="config-desc">Por segurança, é preciso informar a senha atual antes de definir a nova.</p>
   <form method="post" action="/perfil/senha">

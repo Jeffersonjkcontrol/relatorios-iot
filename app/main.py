@@ -36,6 +36,7 @@ from app.auth import (
 from app.auth.db import (
     list_users, create_user, delete_user as auth_delete_user,
     change_password, get_user_by_username, verify_password,
+    reset_password as auth_reset_password, update_profile,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -140,8 +141,10 @@ async def do_login(
         return resp
 
     resp = RedirectResponse(url=next or "/", status_code=303)
+    from app.admin import get_session_max_age_days
+    max_age = get_session_max_age_days() * 24 * 3600
     resp.set_cookie(COOKIE_NAME, create_session_cookie(user.username),
-                    httponly=True, samesite="lax", max_age=7*24*3600)
+                    httponly=True, samesite="lax", max_age=max_age)
     return resp
 
 
@@ -161,8 +164,10 @@ async def do_change_password(
     except ValueError as e:
         return RedirectResponse(url=f"/login?must_change=1&error={str(e)}", status_code=303)
     resp = RedirectResponse(url="/", status_code=303)
+    from app.admin import get_session_max_age_days
+    max_age = get_session_max_age_days() * 24 * 3600
     resp.set_cookie(COOKIE_NAME, create_session_cookie(user.username),
-                    httponly=True, samesite="lax", max_age=7*24*3600)
+                    httponly=True, samesite="lax", max_age=max_age)
     return resp
 
 
@@ -189,6 +194,19 @@ async def page_perfil(request: Request, user: User = Depends(require_user)):
         msg=request.query_params.get("msg"),
         error=request.query_params.get("error"),
     ))
+
+
+@app.post("/perfil/info")
+async def perfil_update_info(
+    full_name: str = Form(""),
+    email: str = Form(""),
+    user: User = Depends(require_user),
+):
+    try:
+        update_profile(user.id, full_name=full_name, email=email)
+    except ValueError as e:
+        return RedirectResponse(url=f"/perfil?error={e}", status_code=303)
+    return RedirectResponse(url="/perfil?msg=Dados+atualizados", status_code=303)
 
 
 @app.post("/perfil/senha")
@@ -251,11 +269,34 @@ async def delete_user_route(uid: int, user: User = Depends(require_gestor)):
     return RedirectResponse(url="/users?msg=Usuário+excluído", status_code=303)
 
 
+@app.post("/users/{uid}/reset-password")
+async def reset_password_route(
+    uid: int,
+    new_password: str = Form(...),
+    user: User = Depends(require_gestor),
+):
+    """Gestor reseta a senha de outro usuário. Força o usuário a trocar a senha
+    no próximo login (must_change_password=True)."""
+    if uid == user.id:
+        return RedirectResponse(url="/users?error=Use+%2Fperfil+para+trocar+a+propria+senha", status_code=303)
+    if not new_password or len(new_password) < 4:
+        return RedirectResponse(url="/users?error=Senha+precisa+ter+ao+menos+4+caracteres", status_code=303)
+    try:
+        auth_reset_password(uid, new_password)
+    except ValueError as e:
+        return RedirectResponse(url=f"/users?error={e}", status_code=303)
+    return RedirectResponse(
+        url=f"/users?msg=Senha+resetada.+O+usuário+precisará+trocá-la+no+próximo+login.",
+        status_code=303,
+    )
+
+
 # ============================================================
 # Painel /admin (somente gestor)
 # ============================================================
 @app.get("/admin", response_class=HTMLResponse)
 async def page_admin(request: Request, user: User = Depends(require_gestor)):
+    from app.admin import get_session_max_age_days
     status = await container_status()
     backups = list_backups()
     for b in backups:
@@ -265,6 +306,7 @@ async def page_admin(request: Request, user: User = Depends(require_gestor)):
         status=status, backups=backups,
         maintenance_on=is_maintenance_mode(),
         maintenance_msg=get_maintenance_msg(),
+        session_max_age_days=get_session_max_age_days(),
         msg=request.query_params.get("msg"),
         error=request.query_params.get("error"),
     ))
@@ -279,6 +321,19 @@ async def admin_set_maintenance(
     set_maintenance_mode(active == "1", message)
     label = "ativada" if active == "1" else "desligada"
     return RedirectResponse(url=f"/admin?msg=Manutenção+{label}", status_code=303)
+
+
+@app.post("/admin/session-expiry")
+async def admin_set_session_expiry(
+    days: int = Form(...),
+    user: User = Depends(require_gestor),
+):
+    from app.admin import set_session_max_age_days
+    try:
+        set_session_max_age_days(days)
+    except ValueError as e:
+        return RedirectResponse(url=f"/admin?error={e}", status_code=303)
+    return RedirectResponse(url=f"/admin?msg=Expiração+de+sessão+definida+como+{days}+dias", status_code=303)
 
 
 @app.post("/admin/restart")

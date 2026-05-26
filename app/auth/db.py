@@ -105,14 +105,43 @@ def delete_user(user_id: int):
         c.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
-def change_password(user_id: int, new_password: str):
+def change_password(user_id: int, new_password: str, force_change_next: bool = False):
     if not new_password or len(new_password) < 4:
         raise ValueError("Senha deve ter pelo menos 4 caracteres")
     with get_conn() as c:
         c.execute(
-            "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?",
-            (hash_password(new_password), user_id),
+            "UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?",
+            (hash_password(new_password), 1 if force_change_next else 0, user_id),
         )
+
+
+def reset_password(user_id: int, new_password: str):
+    """Reset feito por gestor — força user a trocar no próximo login."""
+    change_password(user_id, new_password, force_change_next=True)
+
+
+def update_profile(user_id: int, full_name: str | None = None, email: str | None = None):
+    """Atualiza nome completo / e-mail."""
+    if full_name is None and email is None:
+        return
+    fields = []
+    values = []
+    if full_name is not None:
+        if len(full_name) > 100:
+            raise ValueError("Nome completo muito longo (máx 100 chars)")
+        fields.append("full_name = ?")
+        values.append(full_name.strip())
+    if email is not None:
+        email = email.strip().lower()
+        if email and "@" not in email:
+            raise ValueError("E-mail inválido")
+        if len(email) > 120:
+            raise ValueError("E-mail muito longo")
+        fields.append("email = ?")
+        values.append(email)
+    values.append(user_id)
+    with get_conn() as c:
+        c.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = ?", values)
 
 
 def set_role(user_id: int, role: str):

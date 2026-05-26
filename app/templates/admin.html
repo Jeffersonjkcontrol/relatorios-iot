@@ -66,6 +66,29 @@
   </div>
 </div>
 
+<!-- Sessao -->
+<div class="card admin-section">
+  <div class="admin-section-head"><h2>Sessão dos usuários</h2></div>
+  <p class="config-desc">Tempo de validade do login antes de pedir senha novamente. Mudança vale para novos logins (sessões abertas continuam até expirarem).</p>
+  <form method="post" action="/admin/session-expiry" style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
+    <label style="flex: 0 0 200px;">
+      Expirar em
+      <select name="days">
+        <option value="1" {% if session_max_age_days == 1 %}selected{% endif %}>1 dia</option>
+        <option value="7" {% if session_max_age_days == 7 %}selected{% endif %}>7 dias (padrão)</option>
+        <option value="14" {% if session_max_age_days == 14 %}selected{% endif %}>14 dias</option>
+        <option value="30" {% if session_max_age_days == 30 %}selected{% endif %}>30 dias</option>
+        <option value="90" {% if session_max_age_days == 90 %}selected{% endif %}>90 dias</option>
+        <option value="365" {% if session_max_age_days == 365 %}selected{% endif %}>1 ano</option>
+      </select>
+    </label>
+    <button type="submit" class="btn-secondary">Salvar</button>
+    <span style="color: var(--text-subtle); font-size: var(--fs-sm); margin-left: 8px;">
+      Atual: <strong>{{ session_max_age_days }} dias</strong>
+    </span>
+  </form>
+</div>
+
 <!-- Backups -->
 <div class="card admin-section">
   <div class="admin-section-head"><h2>Backups recentes</h2></div>

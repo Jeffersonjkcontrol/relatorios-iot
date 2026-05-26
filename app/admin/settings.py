@@ -46,3 +46,16 @@ def set_maintenance_mode(active: bool, message: str = ""):
 
 def get_maintenance_msg() -> str:
     return _get("maintenance_msg", "Sistema em manutenção. Volte em alguns minutos.")
+
+
+def get_session_max_age_days() -> int:
+    try:
+        return int(_get("session_max_age_days", "7"))
+    except ValueError:
+        return 7
+
+
+def set_session_max_age_days(days: int):
+    if days < 1 or days > 365:
+        raise ValueError("Use entre 1 e 365 dias")
+    _set("session_max_age_days", str(days))
