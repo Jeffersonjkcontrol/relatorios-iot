@@ -15,14 +15,16 @@ Sistema web para consulta histórica, cálculo de OEE, análise de moldes e chat
 3. [Instalação no mini PC Linux](#3-instalação-no-mini-pc-linux)
 4. [Configuração dos tokens (.env)](#4-configuração-dos-tokens-env)
 5. [Páginas do app](#5-páginas-do-app)
-6. [Acesso remoto via Tailscale](#6-acesso-remoto-via-tailscale)
-7. [Painel Admin](#7-painel-admin)
-8. [IA — provedores e uso](#8-ia--provedores-e-uso)
-9. [Manutenção: backup, restauração, atualização](#9-manutenção)
-10. [Troubleshooting](#10-troubleshooting)
-11. [Stack técnico](#11-stack-técnico)
-12. [Cheatsheet de comandos](#12-cheatsheet-de-comandos)
-13. [Roadmap](#13-roadmap)
+6. [Acesso na LAN (mDNS / hostname amigável)](#6-acesso-na-lan-mdns--hostname-amigável)
+7. [Acesso remoto via Tailscale](#7-acesso-remoto-via-tailscale)
+8. [Painel Admin](#8-painel-admin)
+9. [IA — provedores e uso](#9-ia--provedores-e-uso)
+10. [Manutenção: backup, restauração, atualização](#10-manutenção)
+11. [Troubleshooting](#11-troubleshooting)
+12. [Stack técnico](#12-stack-técnico)
+13. [Cheatsheet de comandos](#13-cheatsheet-de-comandos)
+14. [Playbook de entrega para cliente novo](#14-playbook-de-entrega-para-cliente-novo)
+15. [Roadmap](#15-roadmap)
 
 ---
 
@@ -162,11 +164,29 @@ LAN_CIDR=10.0.0.0/8 curl ... | sudo bash
 TAILSCALE_AUTH_KEY=tskey-auth-xxx curl ... | sudo bash
 ```
 
+### Renomear hostname para nome amigável (recomendado)
+
+Em vez do hostname feio (ex.: `jkcontrol-mini-pc`), use algo curto que o cliente reconheça:
+
+```bash
+sudo hostnamectl set-hostname relatorios
+sudo sed -i 's/jkcontrol-mini-pc/relatorios/g' /etc/hosts
+sudo systemctl restart avahi-daemon
+sudo systemctl restart relatorios-iot
+```
+
+Depois disso o cliente acessa via **mDNS** (zero config): `http://relatorios.local:8000`.
+
 ### Acesso final
 
-- LAN da fábrica: `http://192.168.0.123:8000`
-- Via Tailscale (após configurar): `http://100.x.x.x:8000`
-- Login inicial: `admin` / `admin` (força trocar senha)
+| De onde | URL |
+|---|---|
+| **LAN da fábrica** (qualquer device) | `http://relatorios.local:8000` ⭐ |
+| LAN pelo IP (fallback) | `http://192.168.0.123:8000` |
+| Via Tailscale (você, de qualquer lugar) | `http://100.x.x.x:8000` ou `http://injequaly-relatorios-iot:8000` |
+| Local no próprio mini PC | `http://localhost:8000` |
+
+Login inicial: `admin` / `admin` (força trocar senha no primeiro acesso).
 
 ---
 
@@ -336,11 +356,64 @@ Veja [seção 7](#7-painel-admin).
 
 ---
 
-## 6. Acesso remoto via Tailscale
+## 6. Acesso na LAN (mDNS / hostname amigável)
+
+Dentro da fábrica, o cliente **não precisa decorar IP**. O Ubuntu vem com `avahi-daemon` que anuncia o hostname na rede local. Qualquer dispositivo conectado acessa pelo nome.
+
+### Setup
+
+Renomear hostname pra algo curto:
+```bash
+sudo hostnamectl set-hostname relatorios
+sudo sed -i 's/<hostname-antigo>/relatorios/g' /etc/hosts
+sudo systemctl restart avahi-daemon
+```
+
+### Acesso
+
+De qualquer device da LAN:
+```
+http://relatorios.local:8000
+```
+
+**Compatibilidade:**
+
+| Sistema | mDNS funciona? |
+|---|---|
+| Windows 10/11 | ✅ Nativo |
+| macOS / iOS / iPadOS | ✅ Bonjour nativo |
+| Linux (Ubuntu, etc.) | ✅ avahi |
+| Android (recente) | ⚠️ Parcial — Chrome 113+ funciona; apps antigos podem não. App "Fing" da Play Store ajuda |
+
+### Plano B: reserva DHCP (se mDNS não funcionar na rede do cliente)
+
+Algumas redes corporativas bloqueiam mDNS. Nesse caso, a TI do cliente reserva um IP fixo no roteador:
+
+1. Roteador → "Reserva DHCP" ou "Static Lease"
+2. MAC do mini PC → IP livre (ex.: `192.168.0.50`)
+3. Cliente acessa `http://192.168.0.50:8000`
+
+### Plano C: bookmark no navegador
+
+Independente da URL, ensine o cliente a salvar nos favoritos no primeiro acesso. Aí ele clica direto, sem digitar.
+
+---
+
+## 7. Acesso remoto via Tailscale
 
 ### O que é
 
 Tailscale é uma "VPN mesh" gratuita. Cria uma rede privada virtual entre seus dispositivos com IPs `100.x.x.x`. Você acessa o mini PC de **qualquer lugar do mundo**, sem mexer no roteador da fábrica.
+
+### Vantagens críticas (por que adotar)
+
+- **Independência de IP local** — cliente troca de roteador, muda sub-rede, leva mini PC pra outra unidade → seu acesso continua igual
+- **Sem port forward** — não precisa configurar nada no firewall do cliente
+- **Funciona atrás de CGNAT** — operadoras 4G/5G que não dão IP público funcionam normalmente
+- **Nome amigável (MagicDNS)** — `http://injequaly-relatorios-iot:8000` em vez de IP
+- **SSH sem chaves** — `ssh jkcontrol@injequaly-relatorios-iot` direto
+- **Logs de auditoria** — painel mostra quem entrou, quando, de onde
+- **Plano gratuito até 100 dispositivos** — cobre dezenas de clientes
 
 ### Como funciona
 
@@ -397,9 +470,44 @@ Mostra todos os dispositivos conectados, último acesso, e permite revogar acess
 - Login do app ainda é necessário — Tailscale só dá o "túnel"
 - Operadores comuns não precisam de Tailscale — acessam só pela LAN local
 
+### Compartilhar acesso com o cliente (opcional)
+
+Se o gerente do cliente quiser acessar de fora da fábrica também:
+
+1. No painel Tailscale → **Machines** → clica no device do cliente
+2. Botão **"Share..."** (ou três pontinhos `...` → Share)
+3. Coloca o e-mail dele
+4. Ele recebe convite → cria conta Tailscale → instala app no celular/PC
+5. Acessa pelo IP `100.x.x.x` ou nome
+
+⚠️ Você compartilha **APENAS aquele device** — ele não vê seus outros clientes.
+
+### Alternativa: Tailscale Funnel (expor na internet)
+
+Se quiser que o app fique acessível **publicamente na internet** com HTTPS (sem cliente precisar de Tailscale):
+
+```bash
+sudo tailscale funnel 8000
+```
+
+Gera uma URL pública tipo `https://injequaly-relatorios-iot.taild123.ts.net`.
+
+⚠️ Cuidado: app fica exposto na web — confie nas senhas dos usuários.
+
+### Alternativa: Cloudflare Tunnel (domínio próprio + HTTPS)
+
+Para URL personalizada (ex.: `https://relatorios.injequaly.com.br`):
+
+1. Cria conta gratuita em https://cloudflare.com
+2. Instala `cloudflared` no mini PC
+3. Cria tunnel apontando pra `localhost:8000`
+4. Configura subdomain no Cloudflare DNS
+
+Combina bem com **Cloudflare Access** (autenticação por e-mail antes do app).
+
 ---
 
-## 7. Painel Admin
+## 8. Painel Admin
 
 Acessível em `/admin` apenas pra usuários **gestor**.
 
@@ -441,7 +549,7 @@ Lista dos arquivos `.tar.gz` em `/opt/relatorios-iot/backups/` com tamanho e dat
 
 ---
 
-## 8. IA — provedores e uso
+## 9. IA — provedores e uso
 
 ### Comparação de custos
 
@@ -488,7 +596,7 @@ Cada conversa fica até você apagá-la manualmente (botão ×).
 
 ---
 
-## 9. Manutenção
+## 10. Manutenção
 
 ### Backup automático
 
@@ -584,7 +692,7 @@ sudo systemctl stop relatorios-iot
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### App não responde / página não abre
 
@@ -658,9 +766,47 @@ sudo docker compose logs --tail 200
 # Se persistir, abra issue no GitHub
 ```
 
+### `relatorios.local` não abre no navegador
+
+**No PC do cliente, testar resolução:**
+
+```bash
+# Windows (cmd):
+ping relatorios.local
+
+# Linux/Mac:
+ping relatorios.local
+```
+
+Se o ping não resolve:
+
+1. **avahi-daemon parou?** No mini PC:
+   ```bash
+   sudo systemctl status avahi-daemon
+   sudo systemctl enable --now avahi-daemon
+   sudo systemctl restart avahi-daemon
+   ```
+
+2. **Wi-Fi com isolamento de clientes?** Alguns roteadores bloqueiam comunicação entre dispositivos por padrão. TI precisa desativar "AP isolation" ou "Client isolation". Alternativa: conectar via cabo.
+
+3. **Android antigo?** mDNS não funciona em Chrome Android <113. Solução: instalar app "Fing" da Play Store, ou usar IP direto.
+
+4. **Fallback:** o IP `192.168.0.123:8000` sempre funciona enquanto não trocar de IP.
+
+### Tailscale offline no painel
+
+No mini PC:
+```bash
+sudo tailscale status
+sudo tailscale up    # reconecta
+sudo systemctl restart tailscaled
+```
+
+Se Tailscale "perdeu" a conexão (raro), use `sudo tailscale up --reset` pra limpar e reautenticar.
+
 ---
 
-## 11. Stack técnico
+## 12. Stack técnico
 
 ### Backend (Python)
 
@@ -688,7 +834,7 @@ sudo docker compose logs --tail 200
 
 ---
 
-## 12. Cheatsheet de comandos
+## 13. Cheatsheet de comandos
 
 ### Status e diagnóstico
 
@@ -728,6 +874,16 @@ sudo tailscale ip -4                                # IP 100.x.x.x
 sudo tailscale status                               # quem está conectado
 sudo tailscale up                                   # reconectar
 sudo tailscale logout                               # desconectar (cuidado!)
+sudo tailscale funnel 8000                          # expor publicamente na internet
+```
+
+### Hostname / mDNS
+
+```bash
+hostname                                            # ver hostname atual
+sudo hostnamectl set-hostname relatorios            # mudar hostname
+sudo systemctl restart avahi-daemon                 # anunciar nome novo na LAN
+ping relatorios.local                               # testar resolução mDNS de outro device
 ```
 
 ### Docker compose direto
@@ -745,17 +901,120 @@ sudo docker compose logs --tail 200                 # logs
 
 | O quê | URL |
 |---|---|
-| App pela LAN | http://192.168.0.123:8000 |
-| App via Tailscale | http://100.69.219.59:8000 |
-| App via nome Tailscale | http://injequaly-relatorios-iot:8000 |
+| **App via mDNS (cliente, na LAN)** ⭐ | `http://relatorios.local:8000` |
+| App pela LAN (IP) | `http://192.168.0.123:8000` |
+| App via Tailscale (você) | `http://100.69.219.59:8000` |
+| App via nome Tailscale (você) ⭐ | `http://injequaly-relatorios-iot:8000` |
+| SSH local | `ssh jkcontrol@relatorios.local` |
+| SSH via Tailscale | `ssh jkcontrol@injequaly-relatorios-iot` |
 | GitHub repo | https://github.com/Jeffersonjkcontrol/relatorios-iot |
 | Painel Tailscale | https://login.tailscale.com/admin/machines |
 | GitHub Actions | https://github.com/Jeffersonjkcontrol/relatorios-iot/actions |
-| Imagem Docker | ghcr.io/jeffersonjkcontrol/relatorios-iot:latest |
+| Imagem Docker | `ghcr.io/jeffersonjkcontrol/relatorios-iot:latest` |
 
 ---
 
-## 13. Roadmap
+## 14. Playbook de entrega para cliente novo
+
+Passo a passo reproduzível pra cada nova instalação. Tempo total: ~30-45 minutos.
+
+### Pré-instalação (você prepara)
+
+1. Compra/separa mini PC (Beelink S12, Mele Quieter, ou similar — ver seção 3)
+2. Cria pendrive bootável Ubuntu Server 24.04 LTS
+3. (Opcional) Pré-gera Tailscale auth key descartável em https://login.tailscale.com/admin/settings/keys
+
+### No cliente (presencial ou remoto via VNC)
+
+```
+[1] Instala Ubuntu Server 24.04
+    - Hostname temporário: qualquer (vai trocar depois)
+    - Habilita SSH durante a instalação
+    - Cria usuário 'jkcontrol' com senha forte
+
+[2] Conecta na rede do cliente (cabo de rede ou Wi-Fi)
+
+[3] Descobre IP via DHCP
+    - Roda 'ip a' no console local OU
+    - Procura no painel do roteador
+
+[4] SSH no mini PC
+    ssh jkcontrol@<ip-descoberto>
+
+[5] Instala curl
+    sudo apt update && sudo apt install -y curl
+
+[6] Roda o instalador
+    curl -fsSL https://raw.githubusercontent.com/Jeffersonjkcontrol/relatorios-iot/main/deploy/linux/install.sh | sudo bash
+
+[7] Renomeia o hostname
+    sudo hostnamectl set-hostname relatorios
+    sudo sed -i 's/<hostname-antigo>/relatorios/g' /etc/hosts
+    sudo systemctl restart avahi-daemon
+    sudo systemctl restart relatorios-iot
+    exit  # sai e reconecta com nome novo
+
+[8] Configura tokens
+    ssh jkcontrol@relatorios.local
+    sudo nano /opt/relatorios-iot/.env
+    # cola UBIDOTS_TOKEN, JKCONTROL_TOKEN, GOOGLE_API_KEY (ou outras)
+    sudo systemctl restart relatorios-iot
+
+[9] Instala Tailscale (acesso remoto)
+    curl -fsSL https://tailscale.com/install.sh | sudo sh
+    sudo tailscale up --hostname=<cliente>-relatorios-iot --ssh
+    # autoriza no navegador via URL que aparecer
+
+[10] Primeiro login no app
+     Abre http://relatorios.local:8000
+     admin / admin → troca senha forte
+
+[11] Cria usuário gestor real
+     Vai em /users → Cria 'gestor' / senha forte / papel gestor
+     (mantém o admin como backup ou exclui se preferir)
+
+[12] (Opcional) Cria operadores
+     Mesmo passo, papel 'operador'
+```
+
+### Entrega final
+
+Imprime/envia ao cliente um cartão:
+
+```
+RELATÓRIOS IoT — <Nome do Cliente>
+─────────────────────────────────────
+
+🌐 Acesso (qualquer dispositivo da rede da fábrica):
+    http://relatorios.local:8000
+
+🔑 Login fornecido em separado.
+
+📞 Suporte:
+   Jefferson Piccirillo
+   jefferson.piccirillo@jkcontrol.com.br
+```
+
+E pra você fica:
+```
+Acesso remoto: http://<cliente>-relatorios-iot:8000
+SSH:           ssh jkcontrol@<cliente>-relatorios-iot
+```
+
+### Checklist de validação (antes de sair)
+
+- [ ] App responde em `http://relatorios.local:8000` (mDNS)
+- [ ] Login funciona (admin trocou senha)
+- [ ] Página `/relatorios` lista dispositivos (token Ubidots OK)
+- [ ] Página `/live` mostra cards atualizando
+- [ ] Página `/ai` aceita perguntas (provedor IA OK)
+- [ ] Tailscale aparece no painel com nome correto
+- [ ] SSH via Tailscale funciona do seu notebook
+- [ ] Container reinicia limpo (`sudo systemctl restart relatorios-iot`)
+
+---
+
+## 15. Roadmap
 
 ### Próximas features sugeridas
 
@@ -780,4 +1039,9 @@ Abrir issue em https://github.com/Jeffersonjkcontrol/relatorios-iot/issues ou co
 ✉️ jefferson.piccirillo@jkcontrol.com.br
 🌐 https://jkcontrol.com.br
 
-**Versão da documentação:** 1.5.0 — Maio/2026
+**Versão da documentação:** 1.6.0 — Maio/2026
+
+### Changelog
+
+- **1.6.0** — Hostname amigável `relatorios.local` (mDNS), playbook de entrega, troubleshooting expandido, compartilhamento Tailscale, Tailscale Funnel/Cloudflare Tunnel
+- **1.5.0** — Versão inicial com login multi-usuário, dashboard ao vivo, moldes, painel admin, Tailscale
