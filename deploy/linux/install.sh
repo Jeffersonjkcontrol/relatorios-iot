@@ -128,7 +128,29 @@ if ! ufw status | grep -q "Status: active"; then
   ufw --force enable
 fi
 ufw allow from "$LAN_CIDR" to any port "$PORT" proto tcp comment "$APP_NAME LAN"
-ok "Firewall: porta $PORT liberada apenas para $LAN_CIDR"
+ufw allow from "$LAN_CIDR" to any port 5353 proto udp comment "mDNS LAN" 2>/dev/null || true
+ufw allow out proto udp to 224.0.0.251 port 5353 comment "mDNS multicast out" 2>/dev/null || true
+ok "Firewall: portas $PORT (TCP) e 5353 (UDP mDNS) liberadas para $LAN_CIDR"
+
+# ----------------------------------------------------------------
+log "Configurando avahi-daemon (mDNS) para usar só a interface da LAN"
+# Detecta a interface principal (a que tem IP em rede privada 192.168.x ou 10.x)
+LAN_IFACE=$(ip -br -4 addr show | awk '$3 ~ /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/ {print $1; exit}')
+if [[ -n "$LAN_IFACE" ]]; then
+  # Avahi anuncia em TODAS as interfaces por padrão (inclusive bridges Docker).
+  # Limita a anunciar apenas na interface da LAN real.
+  sed -i 's|^deny-interfaces=.*|#deny-interfaces=|' /etc/avahi/avahi-daemon.conf 2>/dev/null || true
+  sed -i "s|^#*allow-interfaces=.*|allow-interfaces=$LAN_IFACE|" /etc/avahi/avahi-daemon.conf
+  systemctl restart avahi-daemon 2>/dev/null || true
+  ok "Avahi configurado para interface: $LAN_IFACE"
+else
+  warn "Não detectei interface de LAN — mDNS pode anunciar IP errado. Edite /etc/avahi/avahi-daemon.conf manualmente."
+fi
+
+# Atualiza /etc/hosts pra ter o hostname correto (resolução local)
+if grep -q "^127.0.1.1" /etc/hosts; then
+  sed -i "s|^127.0.1.1.*|127.0.1.1 $(hostname)|" /etc/hosts
+fi
 
 # ----------------------------------------------------------------
 log "Instalando systemd service (autostart no boot)"
