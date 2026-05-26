@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Logs do container</h1>
+  <p>Últimas {{ lines }} linhas. <a href="/admin">← voltar para administração</a></p>
+</div>
+
+<div class="card">
+  <pre style="background: #0b1120; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow: auto; max-height: 70vh; font-size: 12px; line-height: 1.5; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word;">{{ logs }}</pre>
+</div>
+{% endblock %}

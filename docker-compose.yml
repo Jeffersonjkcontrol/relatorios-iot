@@ -3,14 +3,13 @@
 # Uso:
 #   docker compose up -d        # sobe em background
 #   docker compose logs -f      # acompanha logs
-#   docker compose pull         # baixa nova versao (se usando imagem publicada)
+#   docker compose pull         # baixa nova versão (se usando imagem publicada)
 #   docker compose down         # para
 #
-# Antes da 1a execucao: copie .env.example para .env e preencha os tokens.
+# Antes da 1a execução: copie .env.example para .env e preencha os tokens.
 
 services:
   relatorios:
-    # Para build local (desenvolvimento):
     build: .
     # Para produção, comente o "build" acima e descomente abaixo:
     # image: ghcr.io/jeffersonjkcontrol/relatorios-iot:latest
@@ -25,7 +24,9 @@ services:
       - .env          # tokens das plataformas + chaves de IA
 
     volumes:
-      - data:/app/data   # SQLite (historico IA) + relatorios gerados
+      - data:/app/data                              # SQLite (histórico IA + users) + relatórios
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Painel /admin: ler status + reiniciar (read-only do daemon)
+      - /opt/relatorios-iot/backups:/app/backups:ro   # Listar backups no painel admin
 
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3).status == 200 else 1)"]

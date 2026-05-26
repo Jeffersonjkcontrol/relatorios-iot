@@ -27,6 +27,7 @@
       <a class="nav-link {% if current_page == 'ai' %}active{% endif %}" href="/ai">IA</a>
       {% if current_user and current_user.role == 'gestor' %}
       <a class="nav-link {% if current_page == 'users' %}active{% endif %}" href="/users">Usuários</a>
+      <a class="nav-link {% if current_page == 'admin' %}active{% endif %}" href="/admin">Admin</a>
       <a class="nav-link {% if current_page == 'config' %}active{% endif %}" href="/config">Configurações</a>
       {% endif %}
     </nav>

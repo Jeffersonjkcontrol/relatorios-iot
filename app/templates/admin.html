@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Administração{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Administração</h1>
+  <p>Painel de operações remotas: manutenção, restart, backup, logs. Acessível só para gestor.</p>
+</div>
+
+{% if msg %}<div class="card" style="background: var(--success-soft); color: var(--success-text); border-color: var(--success);">{{ msg }}</div>{% endif %}
+{% if error %}<div class="card warnings">{{ error }}</div>{% endif %}
+
+<!-- Modo manutenção -->
+<div class="card admin-section">
+  <div class="admin-section-head">
+    <h2>Modo manutenção</h2>
+    <span class="admin-status {{ 'on' if maintenance_on else 'off' }}">
+      {{ 'ATIVO' if maintenance_on else 'desligado' }}
+    </span>
+  </div>
+  <p class="config-desc">Quando ativo, operadores veem uma tela de splash explicando que o sistema está em manutenção. Apenas gestor consegue continuar usando.</p>
+  <form method="post" action="/admin/maintenance" style="display: flex; gap: 8px; align-items: end; flex-wrap: wrap;">
+    <label style="flex: 1; min-width: 240px;">
+      Mensagem (opcional)
+      <input type="text" name="message" placeholder="ex.: Sistema em manutenção até as 18h" value="{{ maintenance_msg or '' }}">
+    </label>
+    {% if maintenance_on %}
+    <input type="hidden" name="active" value="0">
+    <button type="submit" class="btn-secondary">Desligar manutenção</button>
+    {% else %}
+    <input type="hidden" name="active" value="1">
+    <button type="submit" class="btn-primary">Ativar manutenção</button>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Status do container -->
+<div class="card admin-section">
+  <div class="admin-section-head"><h2>Status do container</h2></div>
+  {% if status.available %}
+  <div class="stats-grid">
+    <div class="stat"><span class="lbl">Estado</span><span class="val">{{ status.status }} {% if status.running %}✓{% endif %}</span></div>
+    <div class="stat"><span class="lbl">Saúde</span><span class="val">{{ status.health }}</span></div>
+    <div class="stat"><span class="lbl">CPU</span><span class="val">{{ status.cpu_pct }}%</span></div>
+    <div class="stat"><span class="lbl">Memória</span><span class="val">{{ status.memory_mb }} MB ({{ status.memory_pct }}%)</span></div>
+    <div class="stat"><span class="lbl">Restarts</span><span class="val">{{ status.restart_count }}</span></div>
+    <div class="stat"><span class="lbl">Iniciado em</span><span class="val">{{ status.started_at[:19].replace('T', ' ') }}</span></div>
+  </div>
+  <p class="hint" style="margin-top: 8px;">Imagem: <code>{{ status.image }}</code></p>
+  {% else %}
+  <p class="hint">{{ status.reason }}</p>
+  {% endif %}
+</div>
+
+<!-- Ações -->
+<div class="card admin-section">
+  <div class="admin-section-head"><h2>Ações</h2></div>
+  <div class="admin-actions">
+    <form method="post" action="/admin/restart" onsubmit="return confirm('Reiniciar o container? Vai ficar inacessível por ~10 segundos.');">
+      <button type="submit" class="btn-secondary">↻ Reiniciar container</button>
+    </form>
+    <form method="post" action="/admin/backup" onsubmit="return confirm('Disparar backup agora?');">
+      <button type="submit" class="btn-secondary">💾 Backup agora</button>
+    </form>
+    <a href="/admin/logs" class="btn-secondary" style="text-decoration: none;">📋 Ver logs (últimas 200 linhas)</a>
+  </div>
+</div>
+
+<!-- Backups -->
+<div class="card admin-section">
+  <div class="admin-section-head"><h2>Backups recentes</h2></div>
+  {% if backups %}
+  <table style="width: 100%; border-collapse: collapse; font-size: var(--fs-sm);">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <th style="text-align: left; padding: 6px;">Arquivo</th>
+        <th style="text-align: right; padding: 6px;">Tamanho</th>
+        <th style="text-align: right; padding: 6px;">Data</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in backups %}
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 6px;"><code>{{ b.name }}</code></td>
+        <td style="padding: 6px; text-align: right;">{{ b.size_mb }} MB</td>
+        <td style="padding: 6px; text-align: right; color: var(--text-subtle);">{{ b.mtime_fmt }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">Nenhum backup encontrado neste local. Rode <code>sudo /usr/local/bin/relatorios-iot-backup</code> no host.</p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.admin-section { margin-bottom: var(--space-4); }
+.admin-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
+.admin-section-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+.admin-status {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+}
+.admin-status.on { background: var(--warning-soft); color: var(--warning-text); }
+.admin-status.off { background: var(--surface-2); color: var(--text-subtle); }
+.admin-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.admin-actions form { display: inline; }
+</style>
+{% endblock %}

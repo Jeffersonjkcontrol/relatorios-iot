@@ -41,6 +41,7 @@ Dockerfile
 .dockerignore
 docker-compose.yml
 docker-compose.*.yml
+# entrypoint.sh é copiado explicitamente — não ignorar
 
 # Tests, examples
 tests/

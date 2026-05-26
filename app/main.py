@@ -25,6 +25,10 @@ from app.ai.agent import run_turn, deserialize_messages
 from app.ai.providers import list_providers
 from app.live import get_live_snapshot
 from app.moldes import aggregate_moldes
+from app.admin import (
+    is_maintenance_mode, set_maintenance_mode, get_maintenance_msg,
+    container_status, restart_app, run_backup, get_recent_logs, list_backups,
+)
 from app.auth import (
     User, current_user, require_user, require_gestor,
     create_session_cookie, COOKIE_NAME,
@@ -69,14 +73,13 @@ def tctx(request: Request, **extra) -> dict:
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    public_paths = {"/login", "/logout", "/change-password"}
+    public_paths = {"/login", "/logout", "/change-password", "/maintenance"}
     is_static = path.startswith("/static/")
     if path in public_paths or is_static:
         return await call_next(request)
 
     user = current_user(request)
     if not user:
-        # API: 401 JSON; páginas: redireciona pra login
         if path.startswith("/api/") or request.method != "GET":
             from fastapi.responses import JSONResponse
             return JSONResponse({"detail": "Não autenticado"}, status_code=401)
@@ -85,7 +88,22 @@ async def auth_middleware(request: Request, call_next):
     if user.must_change_password and path != "/change-password":
         return RedirectResponse(url="/login?must_change=1", status_code=303)
 
+    # Modo manutenção: bloqueia tudo exceto admin pra operadores
+    if is_maintenance_mode() and user.role != "gestor":
+        if path.startswith("/api/"):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "Sistema em manutenção"}, status_code=503)
+        if path != "/maintenance":
+            return RedirectResponse(url="/maintenance", status_code=303)
+
     return await call_next(request)
+
+
+@app.get("/maintenance", response_class=HTMLResponse)
+async def page_maintenance(request: Request):
+    return templates.TemplateResponse("maintenance.html", {
+        "request": request, "message": get_maintenance_msg(),
+    })
 
 
 # ============================================================
@@ -194,6 +212,60 @@ async def delete_user_route(uid: int, user: User = Depends(require_gestor)):
         return RedirectResponse(url="/users?error=Você+não+pode+excluir+a+si+mesmo", status_code=303)
     auth_delete_user(uid)
     return RedirectResponse(url="/users?msg=Usuário+excluído", status_code=303)
+
+
+# ============================================================
+# Painel /admin (somente gestor)
+# ============================================================
+@app.get("/admin", response_class=HTMLResponse)
+async def page_admin(request: Request, user: User = Depends(require_gestor)):
+    status = await container_status()
+    backups = list_backups()
+    for b in backups:
+        b["mtime_fmt"] = datetime.fromtimestamp(b["mtime"]).strftime("%d/%m/%Y %H:%M")
+    return templates.TemplateResponse("admin.html", tctx(
+        request, current_page="admin",
+        status=status, backups=backups,
+        maintenance_on=is_maintenance_mode(),
+        maintenance_msg=get_maintenance_msg(),
+        msg=request.query_params.get("msg"),
+        error=request.query_params.get("error"),
+    ))
+
+
+@app.post("/admin/maintenance")
+async def admin_set_maintenance(
+    active: str = Form("0"),
+    message: str = Form(""),
+    user: User = Depends(require_gestor),
+):
+    set_maintenance_mode(active == "1", message)
+    label = "ativada" if active == "1" else "desligada"
+    return RedirectResponse(url=f"/admin?msg=Manutenção+{label}", status_code=303)
+
+
+@app.post("/admin/restart")
+async def admin_restart(user: User = Depends(require_gestor)):
+    result = await restart_app()
+    if not result.get("ok"):
+        return RedirectResponse(url=f"/admin?error={result.get('error', 'Falha')}", status_code=303)
+    return RedirectResponse(url="/admin?msg=Container+reiniciando…", status_code=303)
+
+
+@app.post("/admin/backup")
+async def admin_backup(user: User = Depends(require_gestor)):
+    result = await run_backup()
+    if not result.get("ok"):
+        return RedirectResponse(url=f"/admin?error={result.get('error', 'Falha')}", status_code=303)
+    return RedirectResponse(url="/admin?msg=Backup+concluído", status_code=303)
+
+
+@app.get("/admin/logs", response_class=HTMLResponse)
+async def page_admin_logs(request: Request, lines: int = 200, user: User = Depends(require_gestor)):
+    logs = await get_recent_logs(lines)
+    return templates.TemplateResponse("admin_logs.html", tctx(
+        request, current_page="admin", logs=logs, lines=lines,
+    ))
 
 
 @app.get("/", response_class=HTMLResponse)

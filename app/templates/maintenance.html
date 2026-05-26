@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="30">
+  <title>Manutenção · JKControl</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/style.css">
+  <script>(function(){const t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body class="login-body">
+  <div class="login-card" style="text-align: center; max-width: 460px;">
+    <div style="font-size: 64px; margin-bottom: var(--space-4);">🔧</div>
+    <h1 style="margin: 0 0 var(--space-3); font-size: var(--fs-xl); color: var(--text);">Sistema em manutenção</h1>
+    <p style="color: var(--text-muted); font-size: var(--fs-md); margin-bottom: var(--space-4);">{{ message }}</p>
+    <p class="hint">Esta página tenta recarregar automaticamente a cada 30 segundos.</p>
+    <p class="hint" style="margin-top: var(--space-4);">Suporte: jefferson.piccirillo@jkcontrol.com.br</p>
+    <p style="margin-top: var(--space-6);">
+      <a href="/login" style="color: var(--primary); font-size: var(--fs-sm);">Acesso administrativo</a>
+    </p>
+  </div>
+</body>
+</html>

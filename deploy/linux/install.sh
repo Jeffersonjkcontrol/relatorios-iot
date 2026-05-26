@@ -23,6 +23,12 @@ APP_NAME="relatorios-iot"
 LAN_CIDR="${LAN_CIDR:-192.168.0.0/16}"   # override: LAN_CIDR=10.0.0.0/8 bash install.sh
 IMAGE="${IMAGE:-ghcr.io/jeffersonjkcontrol/relatorios-iot:latest}"
 PORT="${PORT:-8000}"
+# Opcional: se TAILSCALE_AUTH_KEY estiver setado, instala e conecta o Tailscale
+# para acesso remoto. Gere a key em https://login.tailscale.com/admin/settings/keys
+# (Reusable + Pre-approved + Tags como ts:client-xxx).
+# Uso:  TAILSCALE_AUTH_KEY=tskey-auth-xxx sudo bash install.sh
+TS_AUTH="${TAILSCALE_AUTH_KEY:-}"
+TS_HOSTNAME="${TAILSCALE_HOSTNAME:-$(hostname)-relatorios-iot}"
 
 # ----------------------------------------------------------------
 log()  { echo -e "\n\033[1;34m[*]\033[0m $*"; }
@@ -71,6 +77,8 @@ services:
       - .env
     volumes:
       - data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - $APP_DIR/backups:/app/backups:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -183,6 +191,24 @@ systemctl enable --now ${APP_NAME}-backup.timer
 ok "Backup automatico ativado (proximo: $(systemctl list-timers --no-pager | grep ${APP_NAME}-backup | awk '{print $1, $2}'))"
 
 # ----------------------------------------------------------------
+# Tailscale (opcional) - acesso remoto seguro sem abrir porta
+# ----------------------------------------------------------------
+if [[ -n "$TS_AUTH" ]]; then
+  log "Instalando Tailscale (acesso remoto)"
+  if ! command -v tailscale &>/dev/null; then
+    curl -fsSL https://tailscale.com/install.sh | sh
+  fi
+  systemctl enable --now tailscaled
+  tailscale up --authkey="$TS_AUTH" --hostname="$TS_HOSTNAME" --accept-routes --ssh
+  TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
+  ok "Tailscale conectado como '$TS_HOSTNAME' - IP: $TS_IP"
+  warn "Acesse remotamente: ssh $TS_IP  ou  http://$TS_IP:$PORT"
+else
+  warn "Tailscale NAO instalado (TAILSCALE_AUTH_KEY nao informado)."
+  warn "Para habilitar acesso remoto depois: curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up"
+fi
+
+# ----------------------------------------------------------------
 log "Subindo o app (1a vez pode demorar pra baixar a imagem)"
 cd "$APP_DIR"
 docker compose pull 2>&1 | tail -5 || warn "Pull falhou - verifique se a imagem $IMAGE existe ou troque IMAGE= no install.sh"
@@ -197,6 +223,10 @@ echo "================================================================"
 echo
 echo "  Aplicacao: http://$(hostname -I | awk '{print $1}'):$PORT"
 echo "  Local:     http://localhost:$PORT"
+if [[ -n "$TS_AUTH" ]]; then
+  TS_IP_FINAL=$(tailscale ip -4 2>/dev/null | head -1)
+  echo "  Tailscale: http://$TS_IP_FINAL:$PORT  (acessivel de qualquer lugar)"
+fi
 echo
 echo "  Configuracao:    sudo nano $APP_DIR/.env"
 echo "  Logs:            cd $APP_DIR && sudo docker compose logs -f"
