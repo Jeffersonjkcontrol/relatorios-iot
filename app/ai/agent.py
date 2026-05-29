@@ -86,7 +86,12 @@ RELATÓRIOS (PDF/CSV):
 
 
 def system_prompt() -> str:
-    return SYSTEM_PROMPT.format(today=datetime.now().strftime("%d/%m/%Y %H:%M"))
+    from app.ai.knowledge import build_context_block
+    base = SYSTEM_PROMPT.format(today=datetime.now().strftime("%d/%m/%Y %H:%M"))
+    extra = build_context_block()
+    if extra:
+        base = base + "\n\n" + extra
+    return base
 
 
 async def run_turn(

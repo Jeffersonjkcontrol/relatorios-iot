@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}IA — Conhecimento{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Conhecimento da IA</h1>
+  <p>Defina regras de negócio, metas e termos específicos da empresa. Tudo aqui entra no contexto da IA em <strong>todas</strong> as conversas.</p>
+</div>
+
+{% if msg %}<div class="card" style="background: var(--success-soft); color: var(--success-text); border-color: var(--success);">{{ msg }}</div>{% endif %}
+{% if error %}<div class="card warnings">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <p class="config-desc">
+    🤖 Escreva em <strong>português natural</strong>, como se estivesse explicando para um analista novo.
+    A IA leva tudo em conta nas respostas.
+  </p>
+
+  <form method="post" action="/admin/ia">
+    <label style="display: block; margin-bottom: var(--space-5);">
+      <strong style="display: block; margin-bottom: var(--space-1); font-size: var(--fs-md);">Regras de negócio e processo</strong>
+      <small class="hint" style="display: block; margin-bottom: var(--space-2);">
+        Como a fábrica funciona: turnos, responsáveis, fluxos, padrões esperados.
+      </small>
+      <textarea name="business_rules" rows="10" style="width: 100%; font-family: inherit; resize: vertical; padding: 12px;" placeholder="Ex.:
+- Turnos: A (06h-14h), B (14h-22h), C (22h-06h)
+- Operador João é responsável pelo grupo injetoras_injequaly
+- Manutenção preventiva: 1ª segunda do mês
+- Quando ciclo > 1.5x do ideal, considere parada técnica
+- Moldes 'Con.Overlay' rodam só nas inj80, inj76, inj73">{{ business_rules }}</textarea>
+    </label>
+
+    <label style="display: block; margin-bottom: var(--space-5);">
+      <strong style="display: block; margin-bottom: var(--space-1); font-size: var(--fs-md);">Metas e limites operacionais</strong>
+      <small class="hint" style="display: block; margin-bottom: var(--space-2);">
+        Valores numéricos que a IA deve usar como referência.
+      </small>
+      <textarea name="oee_targets" rows="8" style="width: 100%; font-family: inherit; resize: vertical; padding: 12px;" placeholder="Ex.:
+- Meta de OEE da fábrica: 75%
+- Refugo aceitável: < 2%
+- Ciclo ideal inj82 (molde Babel): 45s
+- Ciclo ideal inj81 (Tampa Vermelha): 38s
+- Limite máximo de paradas/turno: 3
+- Alerta de baixa disponibilidade: < 60%">{{ oee_targets }}</textarea>
+    </label>
+
+    <label style="display: block; margin-bottom: var(--space-5);">
+      <strong style="display: block; margin-bottom: var(--space-1); font-size: var(--fs-md);">Glossário de variáveis e termos</strong>
+      <small class="hint" style="display: block; margin-bottom: var(--space-2);">
+        Explique o que cada variável representa — útil quando os nomes são técnicos/abreviados.
+      </small>
+      <textarea name="glossary" rows="8" style="width: 100%; font-family: inherit; resize: vertical; padding: 12px;" placeholder="Ex.:
+- ciclo = tempo de produção de uma peça em milissegundos (transformado para segundos automaticamente)
+- parada = 0 quando máquina rodando, 1 quando parada
+- producao = contador acumulado de peças do turno
+- peca_defeito = peças identificadas com defeito na própria máquina
+- rfid = código do operador logado no momento
+- molde = código do molde montado, vem no context da variável ciclo">{{ glossary }}</textarea>
+    </label>
+
+    <div class="actions">
+      <button type="submit" class="btn-primary">Salvar conhecimento</button>
+      <a href="/ai" class="btn-link" style="margin-left: 12px;">Ir para o chat IA</a>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-md); font-weight: 600;">💡 Dicas para escrever bem</h2>
+  <ul class="config-list">
+    <li><strong>Seja específico:</strong> "ciclo ideal 45s" é melhor que "ciclo deve ser baixo"</li>
+    <li><strong>Use linguagem natural:</strong> "operador João trabalha no turno A" — sem jargão técnico</li>
+    <li><strong>Inclua contexto temporal:</strong> "domingo manutenção, sem produção esperada"</li>
+    <li><strong>Defina alertas:</strong> "se OEE &lt; 60%, sugira investigação"</li>
+    <li><strong>Atualize conforme aprende:</strong> esse conhecimento evolui com a operação</li>
+    <li><strong>Vale para todas as conversas novas:</strong> conversas antigas mantêm o contexto antigo. Use "+ Nova conversa" para pegar o atualizado</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-md); font-weight: 600;">🔬 Capacidade extra: calculadora</h2>
+  <p class="config-desc">A IA também tem uma ferramenta de <strong>cálculo</strong> que aceita operadores matemáticos, funções estatísticas (média, mediana, desvio padrão) e funções math (sqrt, log, sin, cos, etc.).</p>
+  <p class="config-desc">Exemplos de perguntas que ela responde com precisão agora:</p>
+  <ul class="config-list">
+    <li><em>"Qual o desvio padrão dos últimos 10 ciclos da inj82?"</em></li>
+    <li><em>"Quantas peças preciso produzir para atingir 1000kg, sabendo que cada peça pesa 12g?"</em></li>
+    <li><em>"Se a inj82 produzir 800 peças com 45s de ciclo, quantas horas leva?"</em></li>
+  </ul>
+</div>
+{% endblock %}

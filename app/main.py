@@ -29,6 +29,11 @@ from app.admin import (
     is_maintenance_mode, set_maintenance_mode, get_maintenance_msg,
     container_status, restart_app, run_backup, get_recent_logs, list_backups,
 )
+from app.ai.knowledge import (
+    get_business_rules, set_business_rules,
+    get_glossary, set_glossary,
+    get_oee_targets, set_oee_targets,
+)
 from app.auth import (
     User, current_user, require_user, require_gestor,
     create_session_cookie, COOKIE_NAME,
@@ -350,6 +355,31 @@ async def admin_backup(user: User = Depends(require_gestor)):
     if not result.get("ok"):
         return RedirectResponse(url=f"/admin?error={result.get('error', 'Falha')}", status_code=303)
     return RedirectResponse(url="/admin?msg=Backup+concluído", status_code=303)
+
+
+@app.get("/admin/ia", response_class=HTMLResponse)
+async def page_admin_ia(request: Request, user: User = Depends(require_gestor)):
+    return templates.TemplateResponse("admin_ia.html", tctx(
+        request, current_page="admin",
+        business_rules=get_business_rules(),
+        glossary=get_glossary(),
+        oee_targets=get_oee_targets(),
+        msg=request.query_params.get("msg"),
+        error=request.query_params.get("error"),
+    ))
+
+
+@app.post("/admin/ia")
+async def admin_ia_save(
+    business_rules: str = Form(""),
+    oee_targets: str = Form(""),
+    glossary: str = Form(""),
+    user: User = Depends(require_gestor),
+):
+    set_business_rules(business_rules)
+    set_oee_targets(oee_targets)
+    set_glossary(glossary)
+    return RedirectResponse(url="/admin/ia?msg=Conhecimento+atualizado+(novas+conversas+já+usam)", status_code=303)
 
 
 @app.get("/admin/logs", response_class=HTMLResponse)

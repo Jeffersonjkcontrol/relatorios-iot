@@ -238,6 +238,18 @@ def _to_iso_for_form(when: str) -> str:
     return datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%dT%H:%M")
 
 
+async def t_calculate(expression: str, **_) -> dict:
+    """Avalia expressão matemática usando AST seguro."""
+    from app.ai.calculator import safe_calc, CalcError
+    try:
+        result = safe_calc(expression)
+        return {"expression": expression, "result": result}
+    except CalcError as e:
+        return {"error": f"Erro de cálculo: {e}", "expression": expression}
+    except Exception as e:
+        return {"error": str(e), "expression": expression}
+
+
 async def t_generate_report_link(tipo: str, platform: str, device: str, variable: str,
                                   start: str = "", end: str = "",
                                   formato: str = "pdf",
@@ -393,6 +405,27 @@ TOOLS: dict[str, dict] = {
                     "end": {"type": "string"},
                 },
                 "required": ["platform", "devices", "variable", "start", "end"],
+            },
+        ),
+    },
+    "calculate": {
+        "fn": t_calculate,
+        "def": ToolDef(
+            name="calculate",
+            description=(
+                "Calcula uma expressão matemática Python. Use para cálculos "
+                "estatísticos, conversões, fórmulas complexas. Aceita operadores "
+                "(+,-,*,/,%,**,//), funções math (sqrt, log, sin, cos, exp, floor, ceil, "
+                "abs, round, min, max, sum, factorial), estatística (mean, median, "
+                "stdev, variance) e constantes (pi, e, tau). Pode passar listas: "
+                "ex.: 'mean([45.1, 45.8, 44.9])' ou 'sqrt(sum([x**2 for x in [1,2,3]]))'."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string", "description": "Expressão Python segura. Ex.: '(2+3)*4', 'mean([45,46,47])', 'stdev([1,2,3,4,5])'"},
+                },
+                "required": ["expression"],
             },
         ),
     },
