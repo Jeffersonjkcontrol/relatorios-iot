@@ -13,21 +13,30 @@
     <div class="grid">
       <label>
         Grupo (opcional)
-        <input type="text" name="group" id="group" list="groups-list" placeholder="ex.: injetoras_injequaly">
+        <div class="input-wrap">
+          <input type="text" name="group" id="group" list="groups-list" placeholder="ex.: injetoras_injequaly">
+          <button type="button" class="input-clear" data-clear="group" title="Limpar grupo">×</button>
+        </div>
         <datalist id="groups-list"></datalist>
         <small class="hint" id="group-hint">deixe vazio para todos</small>
       </label>
 
       <label>
         Dispositivo
-        <input type="text" name="device" id="device" list="devices-list" required placeholder="ex.: inj82">
+        <div class="input-wrap">
+          <input type="text" name="device" id="device" list="devices-list" required placeholder="ex.: inj82">
+          <button type="button" class="input-clear" data-clear="device" title="Limpar dispositivo">×</button>
+        </div>
         <datalist id="devices-list"></datalist>
         <small class="hint" id="device-hint"></small>
       </label>
 
       <label>
         Variável
-        <input type="text" name="variable" id="variable" list="vars-list" required placeholder="ex.: parada">
+        <div class="input-wrap">
+          <input type="text" name="variable" id="variable" list="vars-list" required placeholder="ex.: parada">
+          <button type="button" class="input-clear" data-clear="variable" title="Limpar variável">×</button>
+        </div>
         <datalist id="vars-list"></datalist>
         <small class="hint" id="var-hint"></small>
       </label>
@@ -53,6 +62,7 @@
 
     <div class="actions">
       <button type="button" class="btn-primary" id="btn-preview">Visualizar</button>
+      <button type="button" class="btn-ghost" id="btn-clear-all">Limpar filtros</button>
       <span id="status" class="status"></span>
     </div>
   </form>
@@ -141,8 +151,67 @@
     }
   }
 
-  $group.addEventListener('input', debounced(() => { loadDevices(); loadVariables(); }));
-  $device.addEventListener('input', debounced(loadVariables));
+  $group.addEventListener('input', debounced(() => {
+    // Trocou grupo -> limpa device e variavel (já não fazem sentido)
+    $device.value = '';
+    $variable.value = '';
+    setDatalist($devicesList, []);
+    setDatalist($varsList, []);
+    $deviceHint.textContent = '';
+    $varHint.textContent = '';
+    loadDevices();
+  }));
+  $device.addEventListener('input', debounced(() => {
+    // Trocou dispositivo -> limpa variável
+    $variable.value = '';
+    setDatalist($varsList, []);
+    $varHint.textContent = '';
+    loadVariables();
+  }));
+
+  // Botões de limpar individuais (X)
+  document.querySelectorAll('.input-clear').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.clear;
+      if (target === 'group') {
+        $group.value = '';
+        $device.value = '';
+        $variable.value = '';
+        setDatalist($devicesList, []);
+        setDatalist($varsList, []);
+        $deviceHint.textContent = '';
+        $varHint.textContent = '';
+        loadDevices();
+      } else if (target === 'device') {
+        $device.value = '';
+        $variable.value = '';
+        setDatalist($varsList, []);
+        $varHint.textContent = 'preencha dispositivo ou grupo';
+        $device.focus();
+      } else if (target === 'variable') {
+        $variable.value = '';
+        $variable.focus();
+      }
+    });
+  });
+
+  // Limpar tudo
+  document.getElementById('btn-clear-all').addEventListener('click', () => {
+    $group.value = '';
+    $device.value = '';
+    $variable.value = '';
+    document.getElementById('start').value = '';
+    document.getElementById('end').value = '';
+    document.getElementById('formato').value = 'pdf';
+    setDatalist($devicesList, []);
+    setDatalist($varsList, []);
+    $deviceHint.textContent = '';
+    $varHint.textContent = 'preencha dispositivo ou grupo';
+    $status.textContent = '';
+    document.getElementById('preview').classList.add('hidden');
+    loadDevices();
+    $group.focus();
+  });
 
   // ---------- Preview + downloads ----------
   const $preview = document.getElementById('preview');

@@ -504,6 +504,50 @@ select:focus, input:focus {
 
 input[type="number"] { font-variant-numeric: tabular-nums; }
 
+/* Input com botão de limpar embutido */
+.input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.input-wrap input {
+  width: 100%;
+  padding-right: 32px;  /* espaço pro botão X */
+}
+.input-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-subtle);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity .12s, color .12s, background .12s;
+  box-shadow: none;
+}
+.input-wrap:hover .input-clear,
+.input-wrap input:focus + .input-clear {
+  opacity: 1;
+}
+.input-clear:hover {
+  background: var(--surface-2);
+  color: var(--danger);
+  opacity: 1;
+}
+/* Mostra o X sempre que o input tem valor */
+.input-wrap input:not(:placeholder-shown) + .input-clear {
+  opacity: 0.7;
+}
+
 .hint {
   font-size: var(--fs-xs);
   color: var(--text-subtle);

@@ -12,13 +12,19 @@
     <div class="grid">
       <label>
         Máquina (dispositivo)
-        <input type="text" id="oee-device" list="devices-list" required placeholder="ex.: inj82">
+        <div class="input-wrap">
+          <input type="text" id="oee-device" list="devices-list" required placeholder="ex.: inj82">
+          <button type="button" class="input-clear" data-clear="oee-device" title="Limpar">×</button>
+        </div>
         <datalist id="devices-list"></datalist>
         <small class="hint" id="device-hint"></small>
       </label>
       <label>
         Variável de ciclo
-        <input type="text" id="oee-variable" list="vars-list" required value="ciclo" placeholder="ciclo">
+        <div class="input-wrap">
+          <input type="text" id="oee-variable" list="vars-list" required value="ciclo" placeholder="ciclo">
+          <button type="button" class="input-clear" data-clear="oee-variable" title="Limpar">×</button>
+        </div>
         <datalist id="vars-list"></datalist>
         <small class="hint" id="var-hint"></small>
       </label>
@@ -105,7 +111,30 @@
     }
   }
 
-  $oeeDevice.addEventListener('input', debounced(loadVariables));
+  $oeeDevice.addEventListener('input', debounced(() => {
+    $oeeVar.value = '';
+    setDatalist($varsList, []);
+    $varHint.textContent = '';
+    loadVariables();
+  }));
+
+  // Botões de limpar (X) ao lado dos campos
+  document.querySelectorAll('.input-clear').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.clear;
+      const el = document.getElementById(target);
+      if (el) {
+        el.value = '';
+        if (target === 'oee-device') {
+          $oeeVar.value = '';
+          setDatalist($varsList, []);
+          $varHint.textContent = '';
+        }
+        el.focus();
+      }
+    });
+  });
+
   loadDevices();
 
   const $oeeStart = document.getElementById('oee-start');
