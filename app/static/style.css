@@ -504,7 +504,7 @@ select:focus, input:focus {
 
 input[type="number"] { font-variant-numeric: tabular-nums; }
 
-/* Input com botão de limpar embutido */
+/* Input com botão de limpar embutido (estilo Material/iOS) */
 .input-wrap {
   position: relative;
   display: flex;
@@ -512,40 +512,48 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
 }
 .input-wrap input {
   width: 100%;
-  padding-right: 32px;  /* espaço pro botão X */
+  padding-right: 30px;  /* espaço pro ícone */
 }
 .input-clear {
   position: absolute;
-  right: 4px;
+  right: 6px;
   top: 50%;
   transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   background: transparent;
   border: none;
   color: var(--text-subtle);
-  font-size: 18px;
-  font-weight: 400;
-  line-height: 1;
   cursor: pointer;
   border-radius: 50%;
   opacity: 0;
-  transition: opacity .12s, color .12s, background .12s;
+  pointer-events: none;
+  transition: opacity .12s, color .12s, background-color .12s;
   box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.input-wrap:hover .input-clear,
-.input-wrap input:focus + .input-clear {
-  opacity: 1;
+.input-clear svg {
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+/* Só aparece se input tem valor (placeholder ausente) */
+.input-wrap input:not(:placeholder-shown) ~ .input-clear,
+.input-wrap input:not(:placeholder-shown) + .input-clear {
+  opacity: 0.5;
+  pointer-events: auto;
 }
 .input-clear:hover {
-  background: var(--surface-2);
+  opacity: 1 !important;
   color: var(--danger);
-  opacity: 1;
 }
-/* Mostra o X sempre que o input tem valor */
-.input-wrap input:not(:placeholder-shown) + .input-clear {
-  opacity: 0.7;
+.input-clear:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: var(--ring);
 }
 
 .hint {
