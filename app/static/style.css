@@ -514,7 +514,7 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
   width: 100%;
   padding-right: 30px;  /* espaço pro ícone */
 }
-button.input-clear,
+span.input-clear,
 .input-clear {
   /* zera TUDO herdado da regra global de button (height, padding, gradient, etc.) */
   all: unset;
@@ -541,6 +541,7 @@ button.input-clear,
   width: 12px;
   height: 12px;
   pointer-events: none;
+  display: block;
 }
 /* Só aparece se input tem valor (placeholder ausente) */
 .input-wrap input:not(:placeholder-shown) ~ .input-clear,
