@@ -613,6 +613,32 @@ button {
 }
 .btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
 
+/* Link - acao de baixa relevancia (estilo de link, sem borda nem fundo) */
+.btn-link {
+  background: transparent;
+  color: var(--text-subtle);
+  border: none;
+  padding: 0 var(--space-2);
+  height: 28px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: none;
+  cursor: pointer;
+  transition: color .12s;
+}
+.btn-link:hover {
+  background: transparent;
+  color: var(--danger);
+  box-shadow: none;
+  filter: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-link:focus-visible { box-shadow: var(--ring); border-radius: var(--radius-sm); }
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
