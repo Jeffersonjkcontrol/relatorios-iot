@@ -295,6 +295,38 @@ Grid de cards mostrando o status atual de cada máquina:
 
 **Mostra:** valor atual, média recente, tendência (↑↓→), molde corrente (do `context`), botão Pausar.
 
+### ⏸️ `/paradas` — Análise de paradas (RFID)
+
+Reconstrói cada **evento de parada** a partir das transições da variável `parada` (0/1) e cruza com os apontamentos RFID:
+
+| Variável | O que é |
+|---|---|
+| `parada` | 1 = máquina parada, 0 = rodando. Transições marcam início/fim do evento |
+| `maq_rfid` | Código do cartão do **motivo** da parada (operador aponta batendo o cartão) |
+| `fun_rfid` | Código do cartão do **funcionário** logado na máquina |
+
+**Algoritmo de correlação:**
+- Motivo: apontamento `maq_rfid` mais próximo dentro da janela da parada (± 2 min de tolerância)
+- Funcionário: último badge `fun_rfid` antes do fim do evento (máx. 24h de idade)
+- Parada ainda aberta → badge "em andamento"; série que começa parada → início truncado na borda do período
+
+**A página mostra:**
+- KPIs: total de paradas, tempo total/médio, **% com motivo apontado** (disciplina operacional!), paradas em andamento, motivo campeão
+- **Pareto por motivo** com barra de % do tempo
+- Tabelas por máquina e por funcionário (tempo médio de retorno)
+- Lista de eventos individuais + botão **Baixar PDF**
+
+**Funciona hoje mesmo sem o firmware novo:** a variável `parada` já publica — eventos aparecem como "Sem motivo apontado" até as injetoras começarem a enviar `maq_rfid`/`fun_rfid`.
+
+### 🗂️ `/cadastros` — Cadastros RFID (só gestor)
+
+Traduz os códigos brutos dos cartões em nomes legíveis:
+
+- **Motivos de parada**: código + nome + categoria (Material, Mecânica, Elétrica, Setup, Qualidade, Operacional)
+- **Funcionários**: código + nome
+
+Código que aparece nas análises sem cadastro é exibido como `"Código 12345 (não cadastrado)"` — basta cadastrar aqui que as análises passam a mostrar o nome.
+
 ### 🔧 `/moldes` — Análise de moldes
 
 Parser inteligente do `context.molde` (`"Pe.Front.Babel|#89-01617|#45seg"`).
@@ -325,6 +357,9 @@ Sidebar de conversas anteriores + chat principal.
 - `summarize_variable` — estatísticas + 10 últimas amostras
 - `compute_oee` — cálculo completo
 - `compare_devices` — comparar várias máquinas
+- `analyze_paradas` — paradas com Pareto por motivo, por máquina e por funcionário
+- `list_rfid_codes` — códigos RFID cadastrados (motivos/funcionários)
+- `calculate` — calculadora segura (estatística, math)
 - `generate_report_link` — gera botão de download PDF/CSV
 
 **Escopo limitado:** se você perguntar sobre clima, política, receitas, etc., ela recusa educadamente.

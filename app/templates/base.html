@@ -23,9 +23,11 @@
       <a class="nav-link {% if current_page == 'live' %}active{% endif %}" href="/live">Ao vivo</a>
       <a class="nav-link {% if current_page == 'relatorios' %}active{% endif %}" href="/">Relatórios</a>
       <a class="nav-link {% if current_page == 'oee' %}active{% endif %}" href="/oee">OEE</a>
+      <a class="nav-link {% if current_page == 'paradas' %}active{% endif %}" href="/paradas">Paradas</a>
       <a class="nav-link {% if current_page == 'moldes' %}active{% endif %}" href="/moldes">Moldes</a>
       <a class="nav-link {% if current_page == 'ai' %}active{% endif %}" href="/ai">IA</a>
       {% if current_user and current_user.role == 'gestor' %}
+      <a class="nav-link {% if current_page == 'cadastros' %}active{% endif %}" href="/cadastros">Cadastros</a>
       <a class="nav-link {% if current_page == 'users' %}active{% endif %}" href="/users">Usuários</a>
       <a class="nav-link {% if current_page == 'admin' %}active{% endif %}" href="/admin">Admin</a>
       <a class="nav-link {% if current_page == 'config' %}active{% endif %}" href="/config">Configurações</a>

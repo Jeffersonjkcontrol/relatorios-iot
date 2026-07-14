@@ -18,6 +18,7 @@ from app.clients import PlatformClient, date_to_ms, make_client
 from app.reports.csv_report import build_csv
 from app.reports.pdf_report import build_pdf
 from app.reports.pdf_oee import build_pdf_oee
+from app.reports.pdf_paradas import build_pdf_paradas
 from app.oee import compute_oee, to_dict as oee_to_dict
 from app.transforms import apply_value, format_value, get_transform
 from app.ai import db as ai_db
@@ -25,6 +26,8 @@ from app.ai.agent import run_turn, deserialize_messages
 from app.ai.providers import list_providers
 from app.live import get_live_snapshot
 from app.moldes import aggregate_moldes
+from app.paradas import analyze_paradas
+from app.cadastros import list_codigos, create_codigo, delete_codigo
 from app.admin import (
     is_maintenance_mode, set_maintenance_mode, get_maintenance_msg,
     container_status, restart_app, run_backup, get_recent_logs, list_backups,
@@ -472,6 +475,87 @@ async def api_moldes(platform: str, variable: str = "ciclo", days: int = 7):
         return await aggregate_moldes(platform, variable, days)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# ============================================================
+# Paradas (análise) + Cadastros RFID
+# ============================================================
+@app.get("/paradas", response_class=HTMLResponse)
+async def page_paradas(request: Request):
+    return templates.TemplateResponse("paradas.html", tctx(request, current_page="paradas"))
+
+
+@app.get("/api/paradas")
+async def api_paradas(
+    platform: str,
+    device: str | None = None,
+    days: int = 7,
+    var_parada: str = "parada",
+    var_motivo: str = "maq_rfid",
+    var_func: str = "fun_rfid",
+):
+    try:
+        return await analyze_paradas(
+            platform, device or None, days, var_parada, var_motivo, var_func,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/cadastros", response_class=HTMLResponse)
+async def page_cadastros(request: Request, user: User = Depends(require_gestor)):
+    return templates.TemplateResponse("cadastros.html", tctx(
+        request, current_page="cadastros",
+        motivos=list_codigos("motivo"),
+        funcionarios=list_codigos("funcionario"),
+        msg=request.query_params.get("msg"),
+        error=request.query_params.get("error"),
+    ))
+
+
+@app.post("/cadastros")
+async def cadastros_create(
+    tipo: str = Form(...),
+    codigo: str = Form(...),
+    nome: str = Form(...),
+    categoria: str = Form(""),
+    user: User = Depends(require_gestor),
+):
+    try:
+        create_codigo(tipo, codigo, nome, categoria)
+    except ValueError as e:
+        return RedirectResponse(url=f"/cadastros?error={e}", status_code=303)
+    return RedirectResponse(url="/cadastros?msg=Código+cadastrado", status_code=303)
+
+
+@app.post("/cadastros/{cid}/delete")
+async def cadastros_delete(cid: int, user: User = Depends(require_gestor)):
+    delete_codigo(cid)
+    return RedirectResponse(url="/cadastros?msg=Código+excluído", status_code=303)
+
+
+@app.post("/relatorio_paradas")
+async def relatorio_paradas(
+    platform: str = Form(...),
+    days: int = Form(7),
+    device: str = Form(""),
+):
+    try:
+        data = await analyze_paradas(platform, device or None, days)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao buscar dados: {e}")
+
+    platform_label = next(
+        (p["label"] for p in PLATFORMS if p["id"] == platform), platform
+    )
+    content = build_pdf_paradas(data, platform_label)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    fname = f"paradas_{platform}_{device or 'todas'}_{stamp}.pdf"
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{fname}"'},
+    )
 
 
 # ---------- AI API ----------

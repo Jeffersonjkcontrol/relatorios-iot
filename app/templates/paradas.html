@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Paradas{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Análise de paradas</h1>
+  <p>Eventos de parada reconstruídos da variável <code>parada</code>, com motivo (<code>maq_rfid</code>) e funcionário (<code>fun_rfid</code>) quando apontados.</p>
+</div>
+
+<div class="card">
+  <form id="paradas-form" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: end;">
+    <label style="flex: 0 0 140px;">
+      Período
+      <select id="p-days">
+        <option value="1">Hoje (24h)</option>
+        <option value="7" selected>Últimos 7 dias</option>
+        <option value="30">Últimos 30 dias</option>
+        <option value="90">Últimos 90 dias</option>
+      </select>
+    </label>
+    <label style="flex: 0 0 200px;">
+      Máquina (opcional)
+      <input type="text" id="p-device" list="devices-list" placeholder="todas">
+      <datalist id="devices-list"></datalist>
+    </label>
+    <button type="button" class="btn-primary" id="p-btn">Atualizar</button>
+    <button type="button" class="btn-secondary" id="p-pdf" disabled>Baixar PDF</button>
+    <span class="status" id="p-status" style="margin-left: auto;"></span>
+  </form>
+</div>
+
+<div id="p-summary"></div>
+
+<div class="card hidden" id="p-motivos-card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Pareto por motivo</h2>
+  <div id="p-motivos"></div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-4);">
+  <div class="card hidden" id="p-maquinas-card">
+    <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Por máquina</h2>
+    <div id="p-maquinas"></div>
+  </div>
+  <div class="card hidden" id="p-funcionarios-card">
+    <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Por funcionário</h2>
+    <div id="p-funcionarios"></div>
+  </div>
+</div>
+
+<div class="card hidden" id="p-eventos-card">
+  <h2 style="margin: 0 0 var(--space-3); font-size: var(--fs-lg); font-weight: 600;">Eventos <span class="hint" id="p-eventos-count"></span></h2>
+  <div class="table-wrap" style="max-height: 480px;">
+    <table class="moldes-table">
+      <thead>
+        <tr><th>Máquina</th><th>Início</th><th>Fim</th><th>Duração</th><th>Motivo</th><th>Funcionário</th></tr>
+      </thead>
+      <tbody id="p-eventos"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const { jget, setDatalist, currentPlatform } = window.app;
+  const platform = currentPlatform();
+
+  const $days = document.getElementById('p-days');
+  const $device = document.getElementById('p-device');
+  const $btn = document.getElementById('p-btn');
+  const $pdf = document.getElementById('p-pdf');
+  const $status = document.getElementById('p-status');
+
+  function fmtDur(s) {
+    if (s < 60) return s.toFixed(0) + ' s';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return `${h}h ${String(m).padStart(2,'0')}m`;
+    const ss = Math.floor(s % 60);
+    return `${m}m ${String(ss).padStart(2,'0')}s`;
+  }
+  function fmtDT(ms) {
+    return new Date(ms).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  }
+  function pct(v) { return v.toFixed(1).replace('.', ',') + '%'; }
+
+  async function loadDevices() {
+    try {
+      const list = await jget(`/api/devices?platform=${encodeURIComponent(platform)}`);
+      setDatalist(document.getElementById('devices-list'), list.map(d => ({ value: d.label, text: d.name })));
+    } catch {}
+  }
+
+  async function refresh() {
+    $btn.disabled = true;
+    $pdf.disabled = true;
+    $status.textContent = 'Analisando paradas (pode levar 10-30s)…';
+    try {
+      const params = new URLSearchParams({ platform, days: $days.value });
+      if ($device.value) params.set('device', $device.value);
+      const d = await jget(`/api/paradas?${params}`);
+      render(d);
+      $pdf.disabled = false;
+      $status.textContent = `${d.maquinas_com_paradas} de ${d.maquinas_consultadas} máquinas com paradas`;
+    } catch (e) {
+      $status.textContent = `Erro: ${e.message}`;
+    } finally {
+      $btn.disabled = false;
+    }
+  }
+
+  function render(d) {
+    const s = d.summary;
+    document.getElementById('p-summary').innerHTML = `
+      <div class="stats-grid">
+        <div class="stat"><span class="lbl">Total de paradas</span><span class="val">${s.total_paradas}</span></div>
+        <div class="stat"><span class="lbl">Tempo total parado</span><span class="val">${fmtDur(s.tempo_total_s)}</span></div>
+        <div class="stat"><span class="lbl">Tempo médio</span><span class="val">${fmtDur(s.tempo_medio_s)}</span></div>
+        <div class="stat"><span class="lbl">Com motivo apontado</span><span class="val">${pct(s.pct_com_motivo)}</span></div>
+        <div class="stat"><span class="lbl">Em andamento</span><span class="val">${s.em_andamento}</span></div>
+        <div class="stat"><span class="lbl">Motivo campeão</span><span class="val" style="font-size: var(--fs-sm);">${s.motivo_campeao || '—'}</span></div>
+      </div>
+    `;
+
+    // Pareto por motivo (barra de % do tempo)
+    const mc = document.getElementById('p-motivos-card');
+    if (d.por_motivo.length) {
+      mc.classList.remove('hidden');
+      document.getElementById('p-motivos').innerHTML = d.por_motivo.map(m => `
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; font-size: var(--fs-sm); margin-bottom: 3px;">
+            <span><strong>${m.motivo}</strong>${m.categoria ? ` <span class="badge">${m.categoria}</span>` : ''}</span>
+            <span style="color: var(--text-subtle);">${m.count}× · ${fmtDur(m.tempo_s)} · ${pct(m.pct_tempo)}</span>
+          </div>
+          <div style="height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden;">
+            <div style="height: 100%; width: ${Math.max(m.pct_tempo, 1)}%; background: var(--kpi-primary-grad); border-radius: 4px;"></div>
+          </div>
+        </div>
+      `).join('');
+    } else { mc.classList.add('hidden'); }
+
+    // Por máquina
+    const qc = document.getElementById('p-maquinas-card');
+    if (d.por_maquina.length) {
+      qc.classList.remove('hidden');
+      document.getElementById('p-maquinas').innerHTML =
+        '<table class="moldes-table"><thead><tr><th>Máquina</th><th>Paradas</th><th>Tempo</th><th>Maior</th></tr></thead><tbody>' +
+        d.por_maquina.map(m => `
+          <tr><td><strong>${m.name}</strong></td>
+          <td class="num">${m.count}</td>
+          <td class="num">${fmtDur(m.tempo_s)}</td>
+          <td class="num">${fmtDur(m.maior_s)}</td></tr>
+        `).join('') + '</tbody></table>';
+    } else { qc.classList.add('hidden'); }
+
+    // Por funcionário
+    const fc = document.getElementById('p-funcionarios-card');
+    if (d.por_funcionario.length) {
+      fc.classList.remove('hidden');
+      document.getElementById('p-funcionarios').innerHTML =
+        '<table class="moldes-table"><thead><tr><th>Funcionário</th><th>Paradas</th><th>Tempo médio</th></tr></thead><tbody>' +
+        d.por_funcionario.map(f => `
+          <tr><td><strong>${f.funcionario}</strong></td>
+          <td class="num">${f.count}</td>
+          <td class="num">${fmtDur(f.tempo_medio_s)}</td></tr>
+        `).join('') + '</tbody></table>';
+    } else { fc.classList.add('hidden'); }
+
+    // Eventos
+    const ec = document.getElementById('p-eventos-card');
+    if (d.eventos.length) {
+      ec.classList.remove('hidden');
+      const MAX = 300;
+      document.getElementById('p-eventos-count').textContent =
+        d.eventos.length > MAX ? `(mostrando ${MAX} de ${d.eventos.length})` : `(${d.eventos.length})`;
+      document.getElementById('p-eventos').innerHTML = d.eventos.slice(0, MAX).map(e => `
+        <tr>
+          <td><strong>${e.device_name}</strong></td>
+          <td class="num">${fmtDT(e.inicio_ms)}${e.inicio_truncado ? ' <span title="Parada começou antes do período">◂</span>' : ''}</td>
+          <td class="num">${e.em_andamento ? '<span class="badge">em andamento</span>' : fmtDT(e.fim_ms)}</td>
+          <td class="num">${fmtDur(e.duracao_s)}</td>
+          <td>${e.motivo}</td>
+          <td>${e.funcionario}</td>
+        </tr>
+      `).join('');
+    } else { ec.classList.add('hidden'); }
+  }
+
+  function downloadPdf() {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/relatorio_paradas';
+    form.target = '_blank';
+    const fields = { platform, days: $days.value, device: $device.value || '' };
+    for (const [k, v] of Object.entries(fields)) {
+      const i = document.createElement('input');
+      i.type = 'hidden'; i.name = k; i.value = v;
+      form.appendChild(i);
+    }
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+  }
+
+  $btn.addEventListener('click', refresh);
+  $pdf.addEventListener('click', downloadPdf);
+  loadDevices();
+  refresh();
+</script>
+{% endblock %}

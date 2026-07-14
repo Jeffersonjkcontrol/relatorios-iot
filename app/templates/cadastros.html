@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Cadastros{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Cadastros RFID</h1>
+  <p>Traduza os códigos dos cartões RFID em nomes legíveis. Usado nas análises de paradas para identificar motivos e funcionários.</p>
+</div>
+
+{% if msg %}<div class="card" style="background: var(--success-soft); color: var(--success-text); border-color: var(--success);">{{ msg }}</div>{% endif %}
+{% if error %}<div class="card warnings">{{ error }}</div>{% endif %}
+
+<!-- ============ MOTIVOS DE PARADA ============ -->
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Motivos de parada</h2>
+  <p class="config-desc">Cartões que o operador bate quando a máquina para (variável <code>maq_rfid</code>).</p>
+
+  {% if motivos %}
+  <table style="width: 100%; border-collapse: collapse; font-size: var(--fs-md); margin-bottom: var(--space-4);">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+        <th style="padding: 8px;">Código RFID</th>
+        <th style="padding: 8px;">Motivo</th>
+        <th style="padding: 8px;">Categoria</th>
+        <th style="padding: 8px; text-align: right;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in motivos %}
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;"><code>{{ m.codigo }}</code></td>
+        <td style="padding: 8px;"><strong>{{ m.nome }}</strong></td>
+        <td style="padding: 8px; color: var(--text-subtle);">{{ m.categoria or '—' }}</td>
+        <td style="padding: 8px; text-align: right;">
+          <form method="post" action="/cadastros/{{ m.id }}/delete" style="display:inline;" onsubmit="return confirm('Excluir {{ m.nome }}?');">
+            <button type="submit" class="btn-ghost" style="color: var(--danger);">Excluir</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint" style="margin-bottom: var(--space-4);">Nenhum motivo cadastrado ainda.</p>
+  {% endif %}
+
+  <form method="post" action="/cadastros">
+    <input type="hidden" name="tipo" value="motivo">
+    <div class="grid" style="grid-template-columns: 160px 1fr 200px auto; align-items: end; gap: var(--space-3);">
+      <label>
+        Código RFID
+        <input type="text" name="codigo" required placeholder="ex.: 1001">
+      </label>
+      <label>
+        Motivo
+        <input type="text" name="nome" required minlength="2" placeholder="ex.: Falta de material">
+      </label>
+      <label>
+        Categoria (opcional)
+        <input type="text" name="categoria" list="categorias-list" placeholder="ex.: Material">
+        <datalist id="categorias-list">
+          <option value="Material"><option value="Mecânica"><option value="Elétrica">
+          <option value="Setup"><option value="Qualidade"><option value="Operacional">
+        </datalist>
+      </label>
+      <button type="submit" class="btn-primary" style="height: 36px;">Adicionar</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ FUNCIONÁRIOS ============ -->
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Funcionários</h2>
+  <p class="config-desc">Cartões de identificação dos operadores (variável <code>fun_rfid</code>).</p>
+
+  {% if funcionarios %}
+  <table style="width: 100%; border-collapse: collapse; font-size: var(--fs-md); margin-bottom: var(--space-4);">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+        <th style="padding: 8px;">Código RFID</th>
+        <th style="padding: 8px;">Nome</th>
+        <th style="padding: 8px; text-align: right;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in funcionarios %}
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;"><code>{{ f.codigo }}</code></td>
+        <td style="padding: 8px;"><strong>{{ f.nome }}</strong></td>
+        <td style="padding: 8px; text-align: right;">
+          <form method="post" action="/cadastros/{{ f.id }}/delete" style="display:inline;" onsubmit="return confirm('Excluir {{ f.nome }}?');">
+            <button type="submit" class="btn-ghost" style="color: var(--danger);">Excluir</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint" style="margin-bottom: var(--space-4);">Nenhum funcionário cadastrado ainda.</p>
+  {% endif %}
+
+  <form method="post" action="/cadastros">
+    <input type="hidden" name="tipo" value="funcionario">
+    <div class="grid" style="grid-template-columns: 160px 1fr auto; align-items: end; gap: var(--space-3);">
+      <label>
+        Código RFID
+        <input type="text" name="codigo" required placeholder="ex.: 2001">
+      </label>
+      <label>
+        Nome
+        <input type="text" name="nome" required minlength="2" placeholder="ex.: João Silva">
+      </label>
+      <button type="submit" class="btn-primary" style="height: 36px;">Adicionar</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-md); font-weight: 600;">💡 Como funciona no chão de fábrica</h2>
+  <ul class="config-list">
+    <li><strong>Início do turno:</strong> operador bate o cartão dele no leitor → firmware publica <code>fun_rfid</code> com o código</li>
+    <li><strong>Máquina para:</strong> firmware publica <code>parada = 1</code></li>
+    <li><strong>Apontamento do motivo:</strong> operador bate o cartão do motivo → firmware publica <code>maq_rfid</code></li>
+    <li><strong>Máquina volta:</strong> firmware publica <code>parada = 0</code></li>
+    <li>O app cruza tudo e mostra na página <a href="/paradas">Paradas</a>: quem estava na máquina, por que parou e quanto tempo levou</li>
+  </ul>
+</div>
+{% endblock %}

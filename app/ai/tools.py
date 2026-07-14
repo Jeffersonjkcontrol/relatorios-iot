@@ -238,6 +238,51 @@ def _to_iso_for_form(when: str) -> str:
     return datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%dT%H:%M")
 
 
+async def t_analyze_paradas(platform: str, device: str | None = None,
+                             start: str = "-7d", end: str = "now", **_) -> dict:
+    """Análise de paradas com motivos e funcionários. Versão compacta pra IA."""
+    from app.paradas import analyze_paradas as _analyze
+    if device:
+        device = await _resolve_device(platform, device)
+    # Converte start/end em dias (a análise trabalha por janela de dias)
+    sms, ems = _parse_when(start), _parse_when(end)
+    days = max(1, round((ems - sms) / 86400000))
+    data = await _analyze(platform, device or None, days)
+    # Compacta: summary + top 5 + até 20 eventos (economiza tokens)
+    return {
+        "periodo_dias": days,
+        "maquinas_com_paradas": data["maquinas_com_paradas"],
+        "summary": data["summary"],
+        "top_motivos": data["por_motivo"][:5],
+        "top_maquinas": data["por_maquina"][:5],
+        "por_funcionario": data["por_funcionario"][:5],
+        "eventos_recentes": [
+            {
+                "maquina": e["device_name"],
+                "inicio": datetime.fromtimestamp(e["inicio_ms"] / 1000).isoformat(),
+                "duracao_s": round(e["duracao_s"]),
+                "motivo": e["motivo"],
+                "funcionario": e["funcionario"],
+                "em_andamento": e["em_andamento"],
+            }
+            for e in data["eventos"][:20]
+        ],
+    }
+
+
+async def t_list_rfid_codes(tipo: str = "", **_) -> dict:
+    """Lista códigos RFID cadastrados (motivos de parada e/ou funcionários)."""
+    from app.cadastros import list_codigos
+    tipos = [tipo] if tipo in ("motivo", "funcionario") else ["motivo", "funcionario"]
+    out = {}
+    for t in tipos:
+        out[t] = [
+            {"codigo": c.codigo, "nome": c.nome, "categoria": c.categoria}
+            for c in list_codigos(t) if c.ativo
+        ]
+    return out
+
+
 async def t_calculate(expression: str, **_) -> dict:
     """Avalia expressão matemática usando AST seguro."""
     from app.ai.calculator import safe_calc, CalcError
@@ -405,6 +450,47 @@ TOOLS: dict[str, dict] = {
                     "end": {"type": "string"},
                 },
                 "required": ["platform", "devices", "variable", "start", "end"],
+            },
+        ),
+    },
+    "analyze_paradas": {
+        "fn": t_analyze_paradas,
+        "def": ToolDef(
+            name="analyze_paradas",
+            description=(
+                "Analisa as PARADAS das máquinas num período: total de paradas, tempo "
+                "parado, Pareto por motivo (via cartão RFID maq_rfid), por máquina e por "
+                "funcionário (via fun_rfid). Use quando o usuário perguntar sobre paradas, "
+                "motivos de parada, tempo parado, quem estava na máquina, ou disciplina de "
+                "apontamento. Device é opcional (sem ele analisa todas as máquinas)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "platform": {"type": "string", "enum": PLATFORM_IDS},
+                    "device": {"type": "string", "description": "Máquina específica (opcional)"},
+                    "start": {"type": "string", "description": "Início (ex.: '-7d', '2026-05-20')", "default": "-7d"},
+                    "end": {"type": "string", "description": "Fim (ex.: 'now')", "default": "now"},
+                },
+                "required": ["platform"],
+            },
+        ),
+    },
+    "list_rfid_codes": {
+        "fn": t_list_rfid_codes,
+        "def": ToolDef(
+            name="list_rfid_codes",
+            description=(
+                "Lista os códigos RFID cadastrados no sistema: motivos de parada e "
+                "funcionários. Use para responder 'quais motivos estão cadastrados?' ou "
+                "para traduzir um código que apareceu como 'não cadastrado'."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "tipo": {"type": "string", "enum": ["motivo", "funcionario"], "description": "Vazio = ambos"},
+                },
+                "required": [],
             },
         ),
     },

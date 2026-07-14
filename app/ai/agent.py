@@ -78,6 +78,15 @@ OEE:
 - compute_oee com outlier_factor=3 por padrão.
 - Após calcular, indique qual KPI é o gargalo (A, P ou Q mais baixo) e sugira investigação.
 
+PARADAS (variáveis parada / maq_rfid / fun_rfid):
+- 'parada' é 0/1: 1 = máquina parada, 0 = rodando. As transições marcam início/fim de cada evento.
+- 'maq_rfid' = código do cartão RFID do MOTIVO da parada (operador aponta o motivo batendo o cartão).
+- 'fun_rfid' = código do cartão do FUNCIONÁRIO logado na máquina.
+- Use a tool analyze_paradas para perguntas sobre: paradas, motivos, tempo parado, quem estava na máquina, ranking de motivos (Pareto), disciplina de apontamento.
+- 'Sem motivo apontado' = a máquina parou mas ninguém bateu o cartão do motivo — baixo % de apontamento é problema de disciplina operacional, vale destacar.
+- 'Código X (não cadastrado)' = cartão batido mas código não está no cadastro — sugira cadastrar em /cadastros.
+- Cruze insights quando fizer sentido: motivo campeão + máquina que mais para + tempo médio de retorno por funcionário.
+
 RELATÓRIOS (PDF/CSV):
 - Quando o usuário pedir um relatório/PDF/CSV/exportar/baixar, chame generate_report_link.
 - A tool devolve um botão de download que aparece na resposta. Mencione o botão no texto.
