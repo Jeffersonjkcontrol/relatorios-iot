@@ -16,7 +16,7 @@ Sistema web para consulta histórica, cálculo de OEE, análise de moldes e chat
 4. [Configuração dos tokens (.env)](#4-configuração-dos-tokens-env)
 5. [Páginas do app](#5-páginas-do-app)
 6. [Acesso na LAN (mDNS / hostname amigável)](#6-acesso-na-lan-mdns--hostname-amigável)
-7. [Acesso remoto via Tailscale](#7-acesso-remoto-via-tailscale)
+7. [Acesso remoto via NetBird](#7-acesso-remoto-via-netbird)
 8. [Painel Admin](#8-painel-admin)
 9. [IA — provedores e uso](#9-ia--provedores-e-uso)
 10. [Manutenção: backup, restauração, atualização](#10-manutenção)
@@ -40,7 +40,7 @@ Sistema web para consulta histórica, cálculo de OEE, análise de moldes e chat
 - 🔐 **Multi-usuário** — papéis "gestor" (total) e "operador" (leitura)
 - 🛠️ **Painel Admin** — modo manutenção, restart, backup, logs
 - 🐳 **Containerizado** — imagem Docker ~76MB
-- 🌐 **Acesso remoto** — via Tailscale (zero config de NAT)
+- 🌐 **Acesso remoto** — via NetBird (VPN mesh WireGuard, zero config de NAT)
 
 ### Plataformas suportadas
 
@@ -110,7 +110,7 @@ relatorios_ubidots/
 - **IA:** Anthropic SDK / OpenAI SDK / Google GenAI SDK / Ollama REST
 - **Empacotamento:** Docker multi-stage
 - **CI/CD:** GitHub Actions → ghcr.io
-- **Acesso remoto:** Tailscale (mesh VPN)
+- **Acesso remoto:** NetBird (mesh VPN WireGuard, open source)
 
 ---
 
@@ -159,10 +159,9 @@ PORT=80 curl -fsSL https://raw.githubusercontent.com/Jeffersonjkcontrol/relatori
 
 # Mudar faixa da LAN no firewall:
 LAN_CIDR=10.0.0.0/8 curl ... | sudo bash
-
-# Instalar Tailscale junto:
-TAILSCALE_AUTH_KEY=tskey-auth-xxx curl ... | sudo bash
 ```
+
+> O NetBird é instalado em passo separado (seção 7) — o instalador não o cobre.
 
 ### Renomear hostname para nome amigável (recomendado)
 
@@ -175,16 +174,18 @@ sudo systemctl restart avahi-daemon
 sudo systemctl restart relatorios-iot
 ```
 
-Depois disso o cliente acessa via **mDNS** (zero config): `http://relatorios.local:8000`.
+Depois disso o cliente acessa via **mDNS** (zero config): `http://relatorios.local`.
 
 ### Acesso final
 
 | De onde | URL |
 |---|---|
-| **LAN da fábrica** (qualquer device) | `http://relatorios.local:8000` ⭐ |
-| LAN pelo IP (fallback) | `http://192.168.0.123:8000` |
-| Via Tailscale (você, de qualquer lugar) | `http://100.x.x.x:8000` ou `http://injequaly-relatorios-iot:8000` |
-| Local no próprio mini PC | `http://localhost:8000` |
+| **LAN da fábrica** (qualquer device) | `http://relatorios.local` ⭐ |
+| LAN pelo IP (fallback) | `http://192.168.0.251` |
+| **Via NetBird** (você, de qualquer lugar) ⭐ | `http://relatorios.netbird.cloud` |
+| Local no próprio mini PC | `http://localhost` |
+
+> A porta 80 é publicada pelo Docker (`80->8000/tcp`), por isso as URLs não levam `:8000`. Dentro do container o app continua escutando na 8000.
 
 Login inicial: `admin` / `admin` (força trocar senha no primeiro acesso).
 
@@ -408,7 +409,7 @@ sudo systemctl restart avahi-daemon
 
 De qualquer device da LAN:
 ```
-http://relatorios.local:8000
+http://relatorios.local
 ```
 
 **Compatibilidade:**
@@ -426,7 +427,7 @@ Algumas redes corporativas bloqueiam mDNS. Nesse caso, a TI do cliente reserva u
 
 1. Roteador → "Reserva DHCP" ou "Static Lease"
 2. MAC do mini PC → IP livre (ex.: `192.168.0.50`)
-3. Cliente acessa `http://192.168.0.50:8000`
+3. Cliente acessa `http://192.168.0.50`
 
 ### Plano C: bookmark no navegador
 
@@ -434,111 +435,170 @@ Independente da URL, ensine o cliente a salvar nos favoritos no primeiro acesso.
 
 ---
 
-## 7. Acesso remoto via Tailscale
+## 7. Acesso remoto via NetBird
 
 ### O que é
 
-Tailscale é uma "VPN mesh" gratuita. Cria uma rede privada virtual entre seus dispositivos com IPs `100.x.x.x`. Você acessa o mini PC de **qualquer lugar do mundo**, sem mexer no roteador da fábrica.
+NetBird é uma VPN mesh baseada em WireGuard. Cria uma rede privada entre seus dispositivos com IPs `100.x.x.x`. Você acessa o mini PC de **qualquer lugar do mundo**, sem mexer no roteador da fábrica.
+
+> **Por que NetBird e não Tailscale?** O projeto nasceu com Tailscale, mas em 11/2026 o plano gratuito deixou de atender o uso comercial. O NetBird cobre o mesmo cenário com plano gratuito de **5 usuários / 100 máquinas** e, diferente do Tailscale, é **open source e self-hostable** — se um dia o plano mudar, você sobe o servidor de gerenciamento num VPS próprio em vez de migrar tudo de novo.
 
 ### Vantagens críticas (por que adotar)
 
-- **Independência de IP local** — cliente troca de roteador, muda sub-rede, leva mini PC pra outra unidade → seu acesso continua igual
+- **Independência de IP local** — cliente troca de roteador, muda sub-rede, leva o mini PC pra outra unidade → seu acesso continua igual
 - **Sem port forward** — não precisa configurar nada no firewall do cliente
 - **Funciona atrás de CGNAT** — operadoras 4G/5G que não dão IP público funcionam normalmente
-- **Nome amigável (MagicDNS)** — `http://injequaly-relatorios-iot:8000` em vez de IP
-- **SSH sem chaves** — `ssh jkcontrol@injequaly-relatorios-iot` direto
-- **Logs de auditoria** — painel mostra quem entrou, quando, de onde
-- **Plano gratuito até 100 dispositivos** — cobre dezenas de clientes
+- **DNS privado** — `http://relatorios.netbird.cloud` em vez de decorar IP
+- **Criptografia WireGuard** ponta a ponta
+- **Open source** — dá pra self-hostar (plano B contra mudança de preço)
 
 ### Como funciona
 
 ```
-[Seu celular]                            [Mini PC fábrica]
-100.81.170.59  ←─ Tailscale mesh ─→     100.69.219.59
-                                          ↓
-                                      Roda o app em :8000
+[Seu notebook / celular]                  [Mini PC fábrica]
+note-dell-jkcontrol                        relatorios
+100.67.4.107    ←─ NetBird mesh ─→        100.67.8.127
+                                             ↓
+                                      Roda o app na porta 80
 ```
 
-### Instalação no mini PC (se ainda não fez)
+### Instalação no mini PC
+
+**1. Crie a Setup Key** no dashboard (https://app.netbird.io) → **Setup Keys** → **Create Setup Key**:
+
+| Campo | Valor |
+|---|---|
+| Name | `jkcontrol-maquinas` |
+| Reusable | ✅ Ligado |
+| Expires in | 30 dias |
+
+**2. Instale o agente:**
 
 ```bash
-ssh jkcontrol@192.168.0.123
-
-# Instala Tailscale:
-curl -fsSL https://tailscale.com/install.sh | sudo sh
-
-# Conecta (vai mostrar uma URL pra autorizar no navegador):
-sudo tailscale up --hostname=injequaly-relatorios-iot --ssh
-
-# Após autorizar, ver o IP:
-sudo tailscale ip -4
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
 ```
+
+> ⚠️ **Se o download travar** (`Conexão expirou` ao baixar o `.deb` de ~16 MB): o CDN do NetBird é lento no Brasil. O metadata baixa, o pacote não. Use o GitHub release, que é bem mais rápido:
+>
+> ```bash
+> curl -fL --retry 5 --retry-delay 3 -C - -o /tmp/netbird.deb \
+>   https://github.com/netbirdio/netbird/releases/download/v0.82.0/netbird_0.82.0_linux_amd64.deb
+> ls -lh /tmp/netbird.deb     # confira ~16 MB antes de instalar
+> sudo dpkg -i /tmp/netbird.deb
+> ```
+>
+> O `-C -` retoma de onde parou — se cair, roda de novo. Isso não quebra atualizações futuras: o repositório `apt` já está configurado, então `apt upgrade` continua funcionando.
+
+**3. Conecte:**
+
+```bash
+sudo netbird up --setup-key <SUA-SETUP-KEY>
+```
+
+**4. Libere o firewall** (sem isso o UFW bloqueia tudo que entra pela VPN — SSH, porta 80, ping):
+
+```bash
+sudo ufw allow in on wt0
+```
+
+**5. Confira:**
+
+```bash
+sudo netbird status -d
+```
+
+Procure por `Management: Connected`, `Signal: Connected`, e anote o **NetBird IP** e o **FQDN**.
 
 ### Instalação nos seus dispositivos
 
 | Dispositivo | Como |
 |---|---|
-| **Windows / Mac / Linux** | Baixe em https://tailscale.com/download |
-| **Android** | Play Store → "Tailscale" |
-| **iPhone / iPad** | App Store → "Tailscale" |
+| **Windows / Mac / Linux** | Dashboard → **Peers** → **Add Peer** → escolha o SO |
+| **Android** | Play Store → "NetBird" |
+| **iPhone / iPad** | App Store → "NetBird" |
 
-Em todos: faz login com a mesma conta (jkcontrol.com.br tenant).
+Nos seus dispositivos pessoais use **login por navegador** (mesma conta) — Setup Key só nas máquinas headless.
 
 ### Acesso
 
-Depois disso, em qualquer dispositivo seu:
-- `http://100.69.219.59:8000` — pelo IP
-- `http://injequaly-relatorios-iot:8000` — pelo nome (MagicDNS)
+| De onde | URL |
+|---|---|
+| **Na fábrica** (LAN) | `http://relatorios.local` |
+| **De fora** (com NetBird ligado) ⭐ | `http://relatorios.netbird.cloud` |
+| De fora, pelo IP | `http://100.67.8.127` |
+| SSH remoto | `ssh jkcontrol@relatorios.netbird.cloud` |
 
-Funciona em 4G do celular, WiFi de casa, hotel, etc.
+Simetria fácil de lembrar: **`.local` dentro, `.netbird.cloud` fora**.
 
-### Painel Tailscale
+### Dashboard
 
-https://login.tailscale.com/admin/machines
+https://app.netbird.io
 
-Mostra todos os dispositivos conectados, último acesso, e permite revogar acesso individual.
+Mostra todos os peers, último handshake e permite revogar acesso individual.
 
 ### Segurança
 
 - Tráfego **end-to-end criptografado** (WireGuard)
-- Quem não tem Tailscale instalado **não consegue acessar** o IP `100.x.x.x`
-- Login do app ainda é necessário — Tailscale só dá o "túnel"
-- Operadores comuns não precisam de Tailscale — acessam só pela LAN local
+- Quem não tem NetBird **não consegue acessar** o IP `100.x.x.x`
+- Login do app ainda é necessário — o NetBird só dá o "túnel"
+- Operadores comuns não precisam de NetBird — acessam só pela LAN local
+- 🔑 **Revogue a Setup Key** depois de terminar as instalações (Dashboard → **Setup Keys**). Ela é reutilizável e fica gravada no histórico do bash da máquina — quem tiver a chave pluga um dispositivo na sua rede.
 
-### Compartilhar acesso com o cliente (opcional)
+### "Último handshake: Nunca" — não é erro
 
-Se o gerente do cliente quiser acessar de fora da fábrica também:
+A partir da versão 0.82 o NetBird usa **lazy connections**: o túnel com um peer só sobe quando há tráfego de verdade. Enquanto ninguém usa, o painel mostra `Nunca` e a bolinha apagada.
 
-1. No painel Tailscale → **Machines** → clica no device do cliente
-2. Botão **"Share..."** (ou três pontinhos `...` → Share)
-3. Coloca o e-mail dele
-4. Ele recebe convite → cria conta Tailscale → instala app no celular/PC
-5. Acessa pelo IP `100.x.x.x` ou nome
+Para forçar: `ping 100.67.8.127`. Depois atualize o painel (↻) — o handshake aparece.
 
-⚠️ Você compartilha **APENAS aquele device** — ele não vê seus outros clientes.
+Efeito prático: o primeiro acesso pode demorar 1-2 segundos a mais. Normal.
 
-### Alternativa: Tailscale Funnel (expor na internet)
+### Opcional: acessar a rede inteira da fábrica
 
-Se quiser que o app fique acessível **publicamente na internet** com HTTPS (sem cliente precisar de Tailscale):
+Por padrão você alcança só o mini PC. Se quiser chegar em **outros equipamentos** da LAN da Injequaly (gateways, CLPs, outras máquinas) sem instalar agente em cada um:
+
+Dashboard → **Networks** → **Add Network** → **Entire Subnet** → `192.168.0.0/24`, escolhendo o mini PC (`relatorios`) como *routing peer*.
+
+Útil pra diagnosticar a rede das injetoras sem depender de alguém no local.
+
+### Troubleshooting
+
+| Sintoma | Causa provável | Solução |
+|---|---|---|
+| `Daemon status: NeedsLogin` | Não autenticou ainda | `sudo netbird up --setup-key <KEY>` |
+| Handshake "Nunca" | Lazy connection (normal) | `ping <ip-do-peer>` pra forçar |
+| Ping não responde | Policy de acesso | Dashboard → **Access Control → Policies**: precisa de regra cobrindo os grupos dos dois peers (padrão: `All` → `All`) |
+| Conecta mas não abre o app | UFW bloqueando a VPN | `sudo ufw allow in on wt0` |
+| Download do `.deb` expira | CDN do NetBird lento no BR | Baixar do GitHub release (ver acima) |
 
 ```bash
-sudo tailscale funnel 8000
+sudo netbird status -d          # status detalhado
+sudo netbird down && sudo netbird up   # reconectar
+sudo systemctl restart netbird  # reiniciar o serviço
 ```
 
-Gera uma URL pública tipo `https://injequaly-relatorios-iot.taild123.ts.net`.
+### Migração do Tailscale (se a máquina ainda tiver)
 
-⚠️ Cuidado: app fica exposto na web — confie nas senhas dos usuários.
+Remova **antes** de instalar o NetBird — os dois disputam a mesma faixa `100.64.0.0/10` e o roteamento pode embolar:
+
+```bash
+sudo tailscale down; sudo apt remove --purge tailscale -y
+sudo rm -f /etc/apt/sources.list.d/tailscale.list /usr/share/keyrings/tailscale-archive-keyring.gpg
+```
+
+⚠️ Faça isso **pela rede local** (SSH no IP `192.168.0.x`), nunca pela própria VPN — você se desconecta no meio e fica sem acesso à máquina.
 
 ### Alternativa: Cloudflare Tunnel (domínio próprio + HTTPS)
 
-Para URL personalizada (ex.: `https://relatorios.injequaly.com.br`):
+Para URL personalizada e pública (ex.: `https://relatorios.injequaly.com.br`), sem o cliente precisar de VPN:
 
 1. Cria conta gratuita em https://cloudflare.com
 2. Instala `cloudflared` no mini PC
-3. Cria tunnel apontando pra `localhost:8000`
+3. Cria tunnel apontando pra `localhost:80`
 4. Configura subdomain no Cloudflare DNS
 
 Combina bem com **Cloudflare Access** (autenticação por e-mail antes do app).
+
+⚠️ Cuidado: o app fica exposto na web — confie nas senhas dos usuários.
 
 ---
 
@@ -826,18 +886,20 @@ Se o ping não resolve:
 
 3. **Android antigo?** mDNS não funciona em Chrome Android <113. Solução: instalar app "Fing" da Play Store, ou usar IP direto.
 
-4. **Fallback:** o IP `192.168.0.123:8000` sempre funciona enquanto não trocar de IP.
+4. **Fallback:** o IP `192.168.0.251` sempre funciona enquanto não trocar de IP.
 
-### Tailscale offline no painel
+### NetBird offline no painel
 
 No mini PC:
 ```bash
-sudo tailscale status
-sudo tailscale up    # reconecta
-sudo systemctl restart tailscaled
+sudo netbird status -d
+sudo netbird up                  # reconecta
+sudo systemctl restart netbird
 ```
 
-Se Tailscale "perdeu" a conexão (raro), use `sudo tailscale up --reset` pra limpar e reautenticar.
+Se o peer aparece com **"Último handshake: Nunca"**, não é erro — é a *lazy connection* da versão 0.82+: o túnel só sobe quando há tráfego. Force com `ping <ip-do-peer>` e atualize o painel.
+
+Se continuar sem responder, verifique as **Access Control → Policies** no dashboard: precisa de regra ativa cobrindo os grupos dos dois peers. E confirme que o UFW libera a VPN: `sudo ufw allow in on wt0`.
 
 ---
 
@@ -859,8 +921,8 @@ Se Tailscale "perdeu" a conexão (raro), use `sudo tailscale up --reset` pra lim
 - **Docker** multi-stage (Python 3.12-slim, imagem final ~76MB)
 - **SQLite** — banco único pra conversas IA, usuários, settings
 - **systemd** — autostart no boot
-- **UFW** — firewall (libera porta 8000 só da LAN)
-- **Tailscale** — VPN mesh pra acesso remoto
+- **UFW** — firewall (libera porta 80 só da LAN + interface `wt0` da VPN)
+- **NetBird** — VPN mesh WireGuard pra acesso remoto (open source)
 
 ### CI/CD
 
@@ -902,14 +964,15 @@ ls -lh /opt/relatorios-iot/backups/                 # listar backups
 curl -fsSL https://raw.githubusercontent.com/Jeffersonjkcontrol/relatorios-iot/main/deploy/linux/update.sh | sudo bash
 ```
 
-### Tailscale
+### NetBird
 
 ```bash
-sudo tailscale ip -4                                # IP 100.x.x.x
-sudo tailscale status                               # quem está conectado
-sudo tailscale up                                   # reconectar
-sudo tailscale logout                               # desconectar (cuidado!)
-sudo tailscale funnel 8000                          # expor publicamente na internet
+sudo netbird status -d                              # status detalhado + IP + FQDN
+sudo netbird up                                     # conectar
+sudo netbird down                                   # desconectar (cuidado!)
+sudo netbird up --setup-key <KEY>                   # registrar máquina nova
+sudo systemctl restart netbird                      # reiniciar o serviço
+sudo ufw allow in on wt0                            # liberar firewall pra VPN
 ```
 
 ### Hostname / mDNS
@@ -936,14 +999,14 @@ sudo docker compose logs --tail 200                 # logs
 
 | O quê | URL |
 |---|---|
-| **App via mDNS (cliente, na LAN)** ⭐ | `http://relatorios.local:8000` |
-| App pela LAN (IP) | `http://192.168.0.123:8000` |
-| App via Tailscale (você) | `http://100.69.219.59:8000` |
-| App via nome Tailscale (você) ⭐ | `http://injequaly-relatorios-iot:8000` |
+| **App via mDNS (cliente, na LAN)** ⭐ | `http://relatorios.local` |
+| App pela LAN (IP) | `http://192.168.0.251` |
+| **App via NetBird (você, de fora)** ⭐ | `http://relatorios.netbird.cloud` |
+| App via NetBird (IP) | `http://100.67.8.127` |
 | SSH local | `ssh jkcontrol@relatorios.local` |
-| SSH via Tailscale | `ssh jkcontrol@injequaly-relatorios-iot` |
+| SSH via NetBird | `ssh jkcontrol@relatorios.netbird.cloud` |
 | GitHub repo | https://github.com/Jeffersonjkcontrol/relatorios-iot |
-| Painel Tailscale | https://login.tailscale.com/admin/machines |
+| Dashboard NetBird | https://app.netbird.io |
 | GitHub Actions | https://github.com/Jeffersonjkcontrol/relatorios-iot/actions |
 | Imagem Docker | `ghcr.io/jeffersonjkcontrol/relatorios-iot:latest` |
 
@@ -957,7 +1020,7 @@ Passo a passo reproduzível pra cada nova instalação. Tempo total: ~30-45 minu
 
 1. Compra/separa mini PC (Beelink S12, Mele Quieter, ou similar — ver seção 3)
 2. Cria pendrive bootável Ubuntu Server 24.04 LTS
-3. (Opcional) Pré-gera Tailscale auth key descartável em https://login.tailscale.com/admin/settings/keys
+3. Pré-gera a **Setup Key** do NetBird em https://app.netbird.io → **Setup Keys** (marque *Reusable*)
 
 ### No cliente (presencial ou remoto via VNC)
 
@@ -995,13 +1058,15 @@ Passo a passo reproduzível pra cada nova instalação. Tempo total: ~30-45 minu
     # cola UBIDOTS_TOKEN, JKCONTROL_TOKEN, GOOGLE_API_KEY (ou outras)
     sudo systemctl restart relatorios-iot
 
-[9] Instala Tailscale (acesso remoto)
-    curl -fsSL https://tailscale.com/install.sh | sudo sh
-    sudo tailscale up --hostname=<cliente>-relatorios-iot --ssh
-    # autoriza no navegador via URL que aparecer
+[9] Instala NetBird (acesso remoto)
+    curl -fsSL https://pkgs.netbird.io/install.sh | sh
+    # se o download do .deb expirar, baixe do GitHub release (ver seção 7)
+    sudo netbird up --setup-key <SUA-SETUP-KEY>
+    sudo ufw allow in on wt0        # sem isso o UFW bloqueia a VPN
+    sudo netbird status -d          # anota o FQDN: relatorios.netbird.cloud
 
 [10] Primeiro login no app
-     Abre http://relatorios.local:8000
+     Abre http://relatorios.local
      admin / admin → troca senha forte
 
 [11] Cria usuário gestor real
@@ -1021,7 +1086,7 @@ RELATÓRIOS IoT — <Nome do Cliente>
 ─────────────────────────────────────
 
 🌐 Acesso (qualquer dispositivo da rede da fábrica):
-    http://relatorios.local:8000
+    http://relatorios.local
 
 🔑 Login fornecido em separado.
 
@@ -1032,19 +1097,22 @@ RELATÓRIOS IoT — <Nome do Cliente>
 
 E pra você fica:
 ```
-Acesso remoto: http://<cliente>-relatorios-iot:8000
-SSH:           ssh jkcontrol@<cliente>-relatorios-iot
+Acesso remoto: http://relatorios.netbird.cloud
+SSH:           ssh jkcontrol@relatorios.netbird.cloud
 ```
+
+> Com vários clientes, o FQDN do NetBird vem do hostname da máquina. Se todos se chamarem `relatorios`, os nomes colidem — use hostnames distintos por cliente (ex.: `relatorios-injequaly`) e o FQDN vira `relatorios-injequaly.netbird.cloud`.
 
 ### Checklist de validação (antes de sair)
 
-- [ ] App responde em `http://relatorios.local:8000` (mDNS)
+- [ ] App responde em `http://relatorios.local` (mDNS)
 - [ ] Login funciona (admin trocou senha)
 - [ ] Página `/relatorios` lista dispositivos (token Ubidots OK)
 - [ ] Página `/live` mostra cards atualizando
 - [ ] Página `/ai` aceita perguntas (provedor IA OK)
-- [ ] Tailscale aparece no painel com nome correto
-- [ ] SSH via Tailscale funciona do seu notebook
+- [ ] Peer aparece no dashboard NetBird com nome correto
+- [ ] ⚠️ **Testado com 4G do celular** (fora da rede da fábrica): `http://<fqdn>.netbird.cloud` e `ssh jkcontrol@<fqdn>.netbird.cloud` — testar pela LAN não prova acesso remoto
+- [ ] Setup Key revogada no dashboard após as instalações
 - [ ] Container reinicia limpo (`sudo systemctl restart relatorios-iot`)
 
 ---
@@ -1074,9 +1142,10 @@ Abrir issue em https://github.com/Jeffersonjkcontrol/relatorios-iot/issues ou co
 ✉️ jefferson.piccirillo@jkcontrol.com.br
 🌐 https://jkcontrol.com.br
 
-**Versão da documentação:** 1.6.0 — Maio/2026
+**Versão da documentação:** 1.7.0 — Novembro/2026
 
 ### Changelog
 
+- **1.7.0** — Migração Tailscale → **NetBird** (seção 7 reescrita): instalação com Setup Key, workaround do CDN lento via GitHub release, regra de firewall `wt0`, *lazy connections*, roteamento de sub-rede, revogação de chave. URLs atualizadas para porta 80 (`http://relatorios.local`) e IP fixo `192.168.0.251`
 - **1.6.0** — Hostname amigável `relatorios.local` (mDNS), playbook de entrega, troubleshooting expandido, compartilhamento Tailscale, Tailscale Funnel/Cloudflare Tunnel
 - **1.5.0** — Versão inicial com login multi-usuário, dashboard ao vivo, moldes, painel admin, Tailscale
