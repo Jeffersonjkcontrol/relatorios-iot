@@ -29,7 +29,7 @@ PADROES: dict[str, str] = {
     "var_funcionario": "fun_rfid",   # cartão do operador
     "var_cod_fun": "",               # cartão cod_fun: fora de uso (deixe vazio)
     "var_op": "op_rfid",             # cartão da ordem de produção
-    "var_qualidade": "",             # cartão da qualidade: fora de uso (deixe vazio)
+    "var_qualidade": "quali_rfid",   # cartão da qualidade (aprovado / reprovado)
     "var_bloqueio": "cont_bloq",     # 1 = contagem de peças bloqueada no dispositivo
     "var_reinicio": "reset_reason",  # causa do último reinício do dispositivo
 
