@@ -8,6 +8,8 @@ Convenções:
 - 'dia' é o dia fabril (YYYY-MM-DD no fuso da fábrica), definido pelos turnos.
 - Totais desnormalizados (ordens.qtd_*, lotes.pecas...) são sempre RECALCULADOS
   a partir das tabelas de fatos (contagens/refugos), nunca incrementados.
+- Códigos (produto, molde, OP, máquina...) são únicos SEM diferenciar maiúsculas:
+  "P-1" e "p-1" são o mesmo item, como em qualquer ERP.
 """
 
 V1 = """
@@ -22,7 +24,7 @@ CREATE TABLE config (
 CREATE TABLE maquinas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     plataforma TEXT NOT NULL,                 -- 'ubidots' | 'jkcontrol'
-    codigo TEXT NOT NULL,                     -- label do dispositivo na plataforma (inj82)
+    codigo TEXT NOT NULL COLLATE NOCASE,      -- label do dispositivo na plataforma (inj82)
     nome TEXT NOT NULL,
     setor TEXT NOT NULL DEFAULT '',
     ativo INTEGER NOT NULL DEFAULT 1,         -- 1 = coletar dados desta máquina
@@ -38,7 +40,7 @@ CREATE TABLE maquinas (
 
 CREATE TABLE produtos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT NOT NULL UNIQUE,
+    codigo TEXT NOT NULL UNIQUE COLLATE NOCASE,
     descricao TEXT NOT NULL,
     unidade TEXT NOT NULL DEFAULT 'PC',
     peso_g REAL,                              -- peso da peça (g): consumo teórico de MP
@@ -51,7 +53,7 @@ CREATE TABLE produtos (
 
 CREATE TABLE moldes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT NOT NULL UNIQUE,
+    codigo TEXT NOT NULL UNIQUE COLLATE NOCASE,
     descricao TEXT NOT NULL,
     cavidades INTEGER NOT NULL DEFAULT 1,
     ciclo_padrao_s REAL,
@@ -68,7 +70,7 @@ CREATE TABLE moldes (
 
 CREATE TABLE materias_primas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT NOT NULL UNIQUE,
+    codigo TEXT NOT NULL UNIQUE COLLATE NOCASE,
     descricao TEXT NOT NULL,
     unidade TEXT NOT NULL DEFAULT 'KG',
     ativo INTEGER NOT NULL DEFAULT 1,
@@ -78,7 +80,7 @@ CREATE TABLE materias_primas (
 CREATE TABLE lotes_mp (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mp_id INTEGER NOT NULL REFERENCES materias_primas(id),
-    codigo TEXT NOT NULL,                     -- lote do fornecedor / interno
+    codigo TEXT NOT NULL COLLATE NOCASE,      -- lote do fornecedor / interno
     fornecedor TEXT NOT NULL DEFAULT '',
     quantidade REAL,
     recebido_ms INTEGER,
@@ -89,7 +91,7 @@ CREATE TABLE lotes_mp (
 
 CREATE TABLE turnos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sigla TEXT NOT NULL UNIQUE,               -- T1, T2, T3 (entra no código do lote)
+    sigla TEXT NOT NULL UNIQUE COLLATE NOCASE, -- T1, T2, T3 (entra no código do lote)
     nome TEXT NOT NULL,
     inicio TEXT NOT NULL,                     -- 'HH:MM'
     fim TEXT NOT NULL,                        -- 'HH:MM' (pode cruzar a meia-noite)
@@ -99,7 +101,7 @@ CREATE TABLE turnos (
 
 CREATE TABLE motivos_refugo (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT NOT NULL UNIQUE,
+    codigo TEXT NOT NULL UNIQUE COLLATE NOCASE,
     descricao TEXT NOT NULL,
     ativo INTEGER NOT NULL DEFAULT 1
 );
@@ -107,11 +109,11 @@ CREATE TABLE motivos_refugo (
 -- ------------------------------------------------------- ordens de produção
 CREATE TABLE ordens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    numero TEXT NOT NULL UNIQUE,
-    produto_id INTEGER NOT NULL REFERENCES produtos(id),
+    numero TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    produto_id INTEGER REFERENCES produtos(id),      -- NULL: OP vista no cartão, ainda sem cadastro
     molde_id INTEGER REFERENCES moldes(id),
     maquina_id INTEGER REFERENCES maquinas(id),      -- máquina planejada
-    quantidade INTEGER NOT NULL CHECK (quantidade > 0),
+    quantidade INTEGER NOT NULL DEFAULT 0 CHECK (quantidade >= 0),   -- 0 = não informada
     cavidades INTEGER,                               -- cavidades ativas (sobrepõe o molde)
     ciclo_padrao_s REAL,                             -- sobrepõe o molde
     status TEXT NOT NULL DEFAULT 'planejada'
@@ -122,7 +124,7 @@ CREATE TABLE ordens (
     cliente TEXT NOT NULL DEFAULT '',
     pedido TEXT NOT NULL DEFAULT '',
     observacao TEXT NOT NULL DEFAULT '',
-    origem TEXT NOT NULL DEFAULT 'manual',           -- manual | erp | csv
+    origem TEXT NOT NULL DEFAULT 'manual',           -- manual | erp | csv | chao (cartão de OP)
     ref_externa TEXT NOT NULL DEFAULT '',
     liberada_ms INTEGER,                             -- quando o PCP liberou para o chão de fábrica
     iniciada_ms INTEGER,
@@ -147,12 +149,12 @@ CREATE TABLE ordem_execucoes (
     fim_ms INTEGER,                                  -- NULL = em andamento
     iniciado_por TEXT NOT NULL DEFAULT '',
     encerrado_por TEXT NOT NULL DEFAULT '',
-    motivo_fim TEXT NOT NULL DEFAULT ''              -- pausa | conclusao | cancelamento
+    motivo_fim TEXT NOT NULL DEFAULT '',             -- pausa | conclusao | cancelamento | troca
+    origem TEXT NOT NULL DEFAULT 'manual'            -- manual | rfid (cartão de OP) | molde
 );
 CREATE INDEX ix_exec_maquina ON ordem_execucoes (maquina_id, inicio_ms);
 CREATE INDEX ix_exec_ordem ON ordem_execucoes (ordem_id);
 CREATE UNIQUE INDEX ux_exec_aberta_maquina ON ordem_execucoes (maquina_id) WHERE fim_ms IS NULL;
-CREATE UNIQUE INDEX ux_exec_aberta_ordem ON ordem_execucoes (ordem_id) WHERE fim_ms IS NULL;
 
 CREATE TABLE ordem_eventos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,7 +171,7 @@ CREATE INDEX ix_ordem_eventos ON ordem_eventos (ordem_id, ts_ms);
 -- pela ingestão; é a unidade de rastreabilidade (etiqueta).
 CREATE TABLE lotes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT NOT NULL UNIQUE,
+    codigo TEXT NOT NULL UNIQUE COLLATE NOCASE,
     ordem_id INTEGER REFERENCES ordens(id) ON DELETE SET NULL,
     maquina_id INTEGER NOT NULL REFERENCES maquinas(id),
     molde_id INTEGER REFERENCES moldes(id) ON DELETE SET NULL,
@@ -193,6 +195,7 @@ CREATE TABLE ciclos (
     maquina_id INTEGER NOT NULL REFERENCES maquinas(id),
     ts_ms INTEGER NOT NULL,
     duracao_ms INTEGER NOT NULL,
+    op_ctx TEXT,                                     -- nº da OP vindo no contexto (cartão RFID)
     molde_id INTEGER,
     ordem_id INTEGER,
     lote_id INTEGER,
@@ -203,37 +206,47 @@ CREATE INDEX ix_ciclos_lote ON ciclos (lote_id);
 
 -- Produção: cada linha é um intervalo com N peças. No modo 'contador' vem do
 -- delta entre leituras do totalizador; no modo 'ciclo', de cada leitura de ciclo.
+-- A leitura das 14:00 cobre o que foi feito das 13:45 às 14:00: por isso dia,
+-- turno, hora e lote usam ref_ms (meio do intervalo), não o instante da leitura.
 CREATE TABLE contagens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     maquina_id INTEGER NOT NULL REFERENCES maquinas(id),
-    ts_ms INTEGER NOT NULL,
+    ts_ms INTEGER NOT NULL,                          -- instante da leitura
+    ref_ms INTEGER NOT NULL,                         -- instante de ATRIBUIÇÃO (meio do intervalo coberto)
     contador REAL,                                   -- leitura bruta (NULL no modo 'ciclo')
     pecas INTEGER NOT NULL,
     anomalia INTEGER NOT NULL DEFAULT 0,             -- 1 = reinício do contador, 2 = salto descartado
+    op_ctx TEXT,                                     -- nº da OP vindo no contexto
     molde_id INTEGER,
     ordem_id INTEGER,
     lote_id INTEGER,
     UNIQUE (maquina_id, ts_ms)
 );
-CREATE INDEX ix_contagens_ts ON contagens (ts_ms);
-CREATE INDEX ix_contagens_ordem ON contagens (ordem_id, ts_ms);
+CREATE INDEX ix_contagens_ref ON contagens (ref_ms);
+CREATE INDEX ix_contagens_maq_ref ON contagens (maquina_id, ref_ms);
+CREATE INDEX ix_contagens_ordem ON contagens (ordem_id, ref_ms);
 CREATE INDEX ix_contagens_lote ON contagens (lote_id);
 
--- Sinais de baixa frequência, guardados crus: parada, cavidade, maq_rfid, fun_rfid
+-- Sinais de baixa frequência, guardados crus. 'variavel' é o PAPEL, não o label
+-- da plataforma: parada, cavidade, alerta, motivo, funcionario, op, qualidade,
+-- bloqueio, reinicio.
 CREATE TABLE sinais (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     maquina_id INTEGER NOT NULL REFERENCES maquinas(id),
     variavel TEXT NOT NULL,
     ts_ms INTEGER NOT NULL,
     valor REAL,
+    codigo TEXT,                                     -- código do cartão / status / nº da OP
     contexto TEXT,
     UNIQUE (maquina_id, variavel, ts_ms)
 );
+CREATE INDEX ix_sinais_papel ON sinais (variavel, ts_ms);
 
 CREATE TABLE paradas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     maquina_id INTEGER NOT NULL REFERENCES maquinas(id),
-    inicio_ms INTEGER NOT NULL,
+    inicio_ms INTEGER NOT NULL,                      -- início REAL (sinal menos o atraso do alerta)
+    sinal_ms INTEGER,                                -- quando o dispositivo publicou parada = 1
     fim_ms INTEGER,                                  -- NULL = em andamento
     inicio_estimado INTEGER NOT NULL DEFAULT 0,      -- 1 = já estava parada quando a coleta começou
     motivo_codigo TEXT,

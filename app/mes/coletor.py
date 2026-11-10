@@ -4,8 +4,9 @@ Roda como tarefa em segundo plano dentro do próprio app (um único processo
 uvicorn — não usar --workers > 1, senão haveria dois coletores).
 
 Estratégia:
-- Ubidots: UMA requisição em lote por passada (POST /data/raw/series) para
-  todas as máquinas e variáveis — medido: 123 variáveis em ~2,5 s.
+- Ubidots: consulta em lote (POST /data/raw/series) para todas as máquinas e
+  variáveis de uma vez — medido: 123 variáveis em ~2,5 s. Com 45 máquinas são
+  3 a 4 requisições por passada, em vez de ~500.
 - Demais plataformas: uma consulta por (máquina, variável), com paralelismo
   limitado.
 
@@ -20,9 +21,11 @@ import asyncio
 import logging
 import time
 
+import httpx
+
 from app.clients import make_client
 from app.config import settings
-from app.mes import cadastros, config, ingestao
+from app.mes import cadastros, config, ingestao, ordens
 from app.mes.db import agora_ms, get_conn
 from app.mes.ingestao import Opcoes, Ponto, Resumo
 
@@ -32,14 +35,14 @@ SOBREPOSICAO_MS = 10 * 60 * 1000
 FATIA_MS = 2 * 3600 * 1000
 LIMITE_POR_SERIE = 1000
 IDS_POR_REQUISICAO = 150
-SEMENTE_JANELA_MS = 400 * 86400 * 1000   # até onde olhar para achar o estado anterior
 PAUSA_ENTRE_FATIAS_S = 0.3
 TTL_VARIAVEIS_S = 600
-
-PAPEL_PARA_CONFIG = {
-    "ciclo": "var_ciclo", "contador": "var_contador", "parada": "var_parada",
-    "cavidade": "var_cavidade", "motivo": "var_motivo", "funcionario": "var_funcionario",
-}
+FAXINA_A_CADA_S = 3600
+DIA_MS = 86400 * 1000
+# Até onde olhar para achar o estado anterior ao histórico (última cavidade, se a
+# máquina já estava parada...). Contas com retenção curta recusam janelas longas
+# (HTTP 403), então tenta da maior para a menor.
+JANELAS_DE_SEMENTE_DIAS = (400, 180, 60, 14)
 
 
 class Coletor:
@@ -48,6 +51,7 @@ class Coletor:
         self._trava = asyncio.Lock()
         self._acordar = asyncio.Event()
         self._variaveis: tuple[float, str, dict[str, tuple[int, str]]] | None = None
+        self._ultima_faxina = 0.0
         self.fase = "parado"             # parado | historico | ao_vivo | erro
         self.progresso = 0.0             # 0..1 durante o histórico
         self.ultimo_ok_ms: int | None = None
@@ -80,6 +84,7 @@ class Coletor:
             intervalo = max(15, config.get_int("intervalo_s", 60))
             try:
                 await self.passada()
+                await self._faxina()
             except asyncio.CancelledError:
                 raise
             except Exception as e:       # nunca derruba o laço
@@ -89,6 +94,17 @@ class Coletor:
                 await asyncio.wait_for(self._acordar.wait(), timeout=intervalo)
             except asyncio.TimeoutError:
                 pass
+
+    async def _faxina(self) -> None:
+        """Tarefas de hora em hora: concluir OPs que não voltaram à máquina."""
+        if time.monotonic() - self._ultima_faxina < FAXINA_A_CADA_S or not config.mes_ativo():
+            return
+        self._ultima_faxina = time.monotonic()
+        dias = config.get_int("auto_concluir_dias", 0)
+        if dias > 0:
+            n = await asyncio.to_thread(ordens.encerrar_inativas, dias)
+            if n:
+                log.info("%d OP(s) encerrada(s) por inatividade", n)
 
     def _registrar_erro(self, e: Exception) -> None:
         self.fase = "erro"
@@ -134,12 +150,8 @@ class Coletor:
         if not token:
             raise RuntimeError(f"Token da plataforma '{plataforma}' não configurado no .env.")
         cliente = make_client(plataforma, base_url, token)
-        opcoes = Opcoes(
-            plataforma=plataforma, var_ciclo=cfg["var_ciclo"],
-            auto_cadastrar_moldes=cfg["auto_cadastrar_moldes"] == "1",
-            auto_iniciar_op=cfg["auto_iniciar_op"] == "1",
-        )
-        variaveis = {papel: cfg[chave] for papel, chave in PAPEL_PARA_CONFIG.items() if cfg.get(chave)}
+        opcoes = Opcoes.da_config(cfg)
+        variaveis = opcoes.variaveis
         turnos = cadastros.turnos_ativos()
 
         agora = agora_ms()
@@ -149,9 +161,9 @@ class Coletor:
         if cursor <= 0:
             # Primeira coleta: semeia o estado anterior e traz o histórico
             dias = max(0, int(float(cfg.get("backfill_dias") or 0)))
-            inicio = agora - dias * 86400 * 1000
+            inicio = agora - dias * DIA_MS
             self.fase, self.progresso = "historico", 0.0
-            series = await self._buscar(cliente, maquinas, variaveis, inicio - SEMENTE_JANELA_MS, inicio, limite=1)
+            series = await self._semente(cliente, maquinas, variaveis, inicio)
             total.somar(await asyncio.to_thread(self._gravar, maquinas, series, opcoes, turnos))
         else:
             inicio = cursor - SOBREPOSICAO_MS
@@ -178,16 +190,27 @@ class Coletor:
         return total
 
     # -------------------------------------------------------------------- busca
+    async def _semente(self, cliente, maquinas, variaveis, inicio_ms: int):
+        """Último ponto de cada variável ANTES do histórico: dá a base do contador,
+        as cavidades e se a máquina já estava parada."""
+        vazio = {m["id"]: {} for m in maquinas}
+        if not hasattr(cliente, "get_series_bulk"):
+            return vazio             # sem consulta em lote não há como pedir "o último antes de X"
+        for dias in JANELAS_DE_SEMENTE_DIAS:
+            try:
+                return await self._buscar_em_lote(
+                    cliente, maquinas, variaveis, inicio_ms - dias * DIA_MS, inicio_ms, limite=1)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 403:
+                    raise
+                log.info("Janela de %d dias recusada pela plataforma (retenção); tentando menor.", dias)
+        return vazio
+
     async def _buscar(self, cliente, maquinas: list[dict], variaveis: dict[str, str],
-                      ini_ms: int, fim_ms: int, limite: int = LIMITE_POR_SERIE
-                      ) -> dict[int, dict[str, list[Ponto]]]:
+                      ini_ms: int, fim_ms: int) -> dict[int, dict[str, list[Ponto]]]:
         """{maquina_id: {papel: [pontos]}} para a janela."""
         if hasattr(cliente, "get_series_bulk"):
-            return await self._buscar_em_lote(cliente, maquinas, variaveis, ini_ms, fim_ms, limite)
-        if limite <= 1:
-            # Semente de estado: sem consulta em lote nao ha como pedir "o ultimo
-            # ponto antes de X" de forma confiavel - a coleta parte sem ela.
-            return {m["id"]: {} for m in maquinas}
+            return await self._buscar_em_lote(cliente, maquinas, variaveis, ini_ms, fim_ms, LIMITE_POR_SERIE)
         return await self._buscar_uma_a_uma(cliente, maquinas, variaveis, ini_ms, fim_ms)
 
     async def _mapa_variaveis(self, cliente, maquinas, variaveis) -> dict[str, tuple[int, str]]:
@@ -196,13 +219,14 @@ class Coletor:
         if self._variaveis and time.time() - self._variaveis[0] < TTL_VARIAVEIS_S \
                 and self._variaveis[1] == assinatura:
             return self._variaveis[2]
-        por_codigo = {m["codigo"]: m["id"] for m in maquinas}
+        por_codigo = {m["codigo"].lower(): m["id"] for m in maquinas}
         papel_do_label = {label: papel for papel, label in variaveis.items()}
         mapa: dict[str, tuple[int, str]] = {}
         for v in await cliente.listar_variaveis_por_labels(sorted(set(variaveis.values()))):
             dispositivo = (v.get("device") or {}).get("label") if isinstance(v.get("device"), dict) else None
-            if v.get("id") and dispositivo in por_codigo and v.get("label") in papel_do_label:
-                mapa[v["id"]] = (por_codigo[dispositivo], papel_do_label[v["label"]])
+            maquina_id = por_codigo.get(str(dispositivo or "").lower())
+            if v.get("id") and maquina_id and v.get("label") in papel_do_label:
+                mapa[v["id"]] = (maquina_id, papel_do_label[v["label"]])
         self._variaveis = (time.time(), assinatura, mapa)
         return mapa
 
@@ -272,8 +296,10 @@ class Coletor:
 coletor = Coletor()
 
 
-async def ativar_mes(plataforma: str) -> dict:
-    """Liga o MES: cadastra as máquinas da plataforma e dispara o histórico inicial."""
+# ------------------------------------------------------------ ativação do MES
+async def reconhecer_conta(plataforma: str) -> dict:
+    """Olha a conta na plataforma e diz o que o MES consegue coletar dela:
+    quais dispositivos existem e quais variáveis (por papel) estão publicadas."""
     base_url, token = settings.platform(plataforma)
     if not token:
         raise ValueError(f"Token da plataforma '{plataforma}' não configurado no .env.")
@@ -281,12 +307,54 @@ async def ativar_mes(plataforma: str) -> dict:
     dispositivos = await cliente.list_devices()
     if not dispositivos:
         raise ValueError("A plataforma não devolveu nenhum dispositivo — confira o token.")
-    resultado = cadastros.sincronizar_maquinas(plataforma, dispositivos)
+
+    cfg = config.todas()
+    labels_por_dispositivo: dict[str, set[str]] = {}
+    for v in await cliente.list_variables():
+        d = v.get("device")
+        d = d.get("label") if isinstance(d, dict) else None
+        if d and v.get("label"):
+            labels_por_dispositivo.setdefault(d, set()).add(v["label"])
+    existentes = set().union(*labels_por_dispositivo.values()) if labels_por_dispositivo else set()
+
+    papeis = {}
+    for papel, chave in config.PAPEL_PARA_CONFIG.items():
+        label = cfg.get(chave, "").strip()
+        sugestao = label
+        if label and label not in existentes:
+            # o label padrão não existe nesta conta: outro firmware pode usar outro nome
+            sugestao = next((alt for alt in config.ALTERNATIVAS.get(chave, []) if alt in existentes), label)
+        papeis[papel] = {
+            "chave": chave, "descricao": config.DESCRICOES.get(chave, papel),
+            "label": sugestao, "existe": sugestao in existentes,
+            "maquinas": sum(1 for s in labels_por_dispositivo.values() if sugestao in s),
+        }
+    ciclo = papeis["ciclo"]["label"]
+    return {
+        "plataforma": plataforma,
+        "dispositivos": [
+            {"label": d.get("label"), "name": d.get("name") or d.get("label"),
+             "tem_ciclo": ciclo in labels_por_dispositivo.get(d.get("label"), set())}
+            for d in dispositivos if d.get("label")],
+        "papeis": papeis,
+    }
+
+
+async def ativar_mes(plataforma: str) -> dict:
+    """Liga o MES: cadastra as máquinas da plataforma e dispara o histórico inicial."""
+    conta = await reconhecer_conta(plataforma)
+    for papel in conta["papeis"].values():
+        if papel["existe"] and papel["label"] != config.get(papel["chave"]):
+            config.set_(papel["chave"], papel["label"])      # ex.: contador 'producao' em vez de 'injecao_hora'
+    resultado = cadastros.sincronizar_maquinas(plataforma, conta["dispositivos"])
+    # Dispositivo sem variável de ciclo não é máquina de produção (esteira, gateway...)
+    sem_ciclo = [d["label"] for d in conta["dispositivos"] if not d["tem_ciclo"]]
+    desativadas = cadastros.desativar_recem_criadas(plataforma, sem_ciclo) if sem_ciclo else 0
     config.set_("plataforma", plataforma)
     config.set_("ativo", True)
     coletor.iniciar()
     coletor.acordar()
-    return resultado
+    return {**resultado, "sem_ciclo": sem_ciclo, "desativadas": desativadas}
 
 
 async def sincronizar_maquinas() -> dict:

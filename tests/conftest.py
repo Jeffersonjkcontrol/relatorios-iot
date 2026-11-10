@@ -24,9 +24,24 @@ import pytest  # noqa: E402
 
 @pytest.fixture()
 def banco(tmp_path):
-    """Banco do MES novo e vazio para cada teste."""
+    """Bancos novos e vazios para cada teste: o do MES e o da legenda RFID."""
+    import app.ai.db as banco_geral
+    import app.cadastros as legenda
     from app.mes import db
     db.usar_banco(tmp_path / "mes.db")
     db.garantir_schema()
+    original = banco_geral.DB_PATH
+    banco_geral.DB_PATH = tmp_path / "ai_history.db"
+    legenda._init()
     yield db
+    banco_geral.DB_PATH = original
     db.usar_banco(Path(_TMP) / "mes.db")
+
+
+@pytest.fixture()
+def maq(banco):
+    """Duas injetoras cadastradas; devolve a primeira."""
+    from app.mes import cadastros
+    cadastros.sincronizar_maquinas("ubidots", [
+        {"label": "inj01", "name": "Injetora 01"}, {"label": "inj02", "name": "Injetora 02"}])
+    return cadastros.obter_maquina_por_codigo("inj01")

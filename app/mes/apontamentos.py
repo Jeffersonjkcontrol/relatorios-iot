@@ -212,10 +212,11 @@ def consumos_no_intervalo(c, maquina_id: int, ini_ms: int, fim_ms: int) -> list[
 
 # ---------------------------------------------------------- motivo de parada
 def motivos_parada() -> list[dict]:
-    """Motivos disponíveis para apontamento (cadastro RFID existente)."""
+    """Eventos de parada disponíveis para apontamento manual: a legenda dos
+    cartões de máquina, sem os de 'produção (liberação)' — esses não são motivo."""
     return [{"codigo": m.codigo, "nome": m.nome, "categoria": m.categoria,
-             "planejada": bool(getattr(m, "planejada", False))}
-            for m in list_codigos("motivo") if m.ativo]
+             "classe": m.classe, "cor": m.cor_efetiva}
+            for m in list_codigos("motivo") if m.ativo and m.classe != "producao"]
 
 
 def apontar_motivo_parada(parada_id: int, motivo_codigo: str, usuario: str = "",
@@ -234,10 +235,15 @@ def apontar_motivo_parada(parada_id: int, motivo_codigo: str, usuario: str = "",
 
 
 def limpar_motivo_parada(parada_id: int) -> None:
-    """Desfaz o apontamento manual; o cartão RFID volta a valer na próxima coleta."""
+    """Desfaz o apontamento manual. Se houve cartão RFID batido naquela parada,
+    ele volta a valer na hora."""
+    from app.mes import ingestao          # import tardio: ingestao não depende deste módulo
     with get_conn() as c:
-        cur = c.execute(
+        ev = c.execute("SELECT maquina_id, inicio_ms FROM paradas WHERE id = ?", (parada_id,)).fetchone()
+        if not ev:
+            raise ValueError("Parada não encontrada.")
+        c.execute(
             "UPDATE paradas SET motivo_codigo = NULL, motivo_origem = NULL, motivo_ts_ms = NULL, "
             "apontado_por = '', observacao = '' WHERE id = ?", (parada_id,))
-        if cur.rowcount == 0:
-            raise ValueError("Parada não encontrada.")
+        ingestao.associar_apontamentos(c, ev["maquina_id"], ev["inicio_ms"], agora_ms(),
+                                       ingestao.liberacoes_cadastradas())

@@ -7,9 +7,18 @@ Ciclo de vida:
         │                     │                      └──concluir──▶ concluida ◀┘
         └─────────────────────┴──────────cancelar──▶ cancelada
 
-PCP planeja e libera; o chão de fábrica inicia, pausa e conclui. Cada período
-em produção vira uma linha em ordem_execucoes — é por ela que ciclos, contagens
-e paradas são atribuídos à OP (ver lotes.py).
+Cada período em produção numa máquina é uma linha de ordem_execucoes. Há três
+jeitos de uma execução nascer (coluna `origem`):
+
+    rfid    o operador bateu o cartão da OP no leitor da máquina — o firmware
+            passa a enviar o nº da OP no contexto de cada ciclo. É o modo normal
+            em fábricas com o leitor: ninguém aponta nada no computador.
+    manual  alguém clicou em "Iniciar" na tela (aceita horário retroativo).
+    molde   OP liberada cujo molde começou a ciclar (firmware sem cartão de OP).
+
+OP cujo número aparece no cartão e ainda não existe aqui é criada na hora
+(origem 'chao'), sem produto nem quantidade; o ERP/PCP completa depois pelo
+mesmo número.
 """
 from __future__ import annotations
 
@@ -24,6 +33,7 @@ ROTULOS = {
     "planejada": "Planejada", "liberada": "Liberada", "em_producao": "Em produção",
     "pausada": "Pausada", "concluida": "Concluída", "cancelada": "Cancelada",
 }
+ORIGENS = {"manual": "Manual", "erp": "ERP", "csv": "CSV", "chao": "Cartão na máquina"}
 TOLERANCIA_FUTURO_MS = 60_000
 
 _SQL = """
@@ -32,12 +42,17 @@ _SQL = """
            m.codigo AS molde_codigo, m.descricao AS molde_descricao,
            m.cavidades AS molde_cavidades, m.ciclo_padrao_s AS molde_ciclo_s,
            q.codigo AS maquina_codigo, q.nome AS maquina_nome,
-           e.inicio_ms AS exec_inicio_ms
+           (SELECT COUNT(*) FROM ordem_execucoes e
+             WHERE e.ordem_id = o.id AND e.fim_ms IS NULL) AS exec_abertas,
+           (SELECT MIN(e.inicio_ms) FROM ordem_execucoes e
+             WHERE e.ordem_id = o.id AND e.fim_ms IS NULL) AS exec_inicio_ms,
+           (SELECT GROUP_CONCAT(nome, ', ') FROM (
+                SELECT q2.nome FROM ordem_execucoes e JOIN maquinas q2 ON q2.id = e.maquina_id
+                WHERE e.ordem_id = o.id AND e.fim_ms IS NULL ORDER BY e.inicio_ms)) AS exec_maquinas
     FROM ordens o
-    JOIN produtos p ON p.id = o.produto_id
+    LEFT JOIN produtos p ON p.id = o.produto_id
     LEFT JOIN moldes m ON m.id = o.molde_id
     LEFT JOIN maquinas q ON q.id = o.maquina_id
-    LEFT JOIN ordem_execucoes e ON e.ordem_id = o.id AND e.fim_ms IS NULL
 """
 
 
@@ -50,12 +65,18 @@ def _enriquecer(row: sqlite3.Row) -> dict:
     o = dict(row)
     boas = max(0, o["qtd_produzida"] - o["qtd_refugo"])
     o["qtd_boas"] = boas
-    o["restante"] = max(0, o["quantidade"] - boas)
-    o["pct"] = round(min(100.0, boas / o["quantidade"] * 100), 1) if o["quantidade"] else 0.0
+    if o["quantidade"] > 0:
+        o["restante"] = max(0, o["quantidade"] - boas)
+        o["pct"] = round(min(100.0, boas / o["quantidade"] * 100), 1)
+    else:                                   # quantidade ainda não informada
+        o["restante"] = None
+        o["pct"] = None
     o["status_rotulo"] = ROTULOS.get(o["status"], o["status"])
+    o["origem_rotulo"] = ORIGENS.get(o["origem"], o["origem"])
     o["cavidades_efetivas"] = o["cavidades"] or o["molde_cavidades"] or 1
     o["ciclo_efetivo_s"] = o["ciclo_padrao_s"] or o["molde_ciclo_s"]
-    o["em_execucao"] = o["exec_inicio_ms"] is not None
+    o["em_execucao"] = o["exec_abertas"] > 0
+    o["cadastro_incompleto"] = o["produto_id"] is None or o["quantidade"] == 0
     return o
 
 
@@ -81,7 +102,8 @@ def obter_por_numero(numero: str) -> dict | None:
 
 
 def listar(status: str | list[str] | None = None, maquina_id: int | None = None,
-           busca: str = "", desde_ms: int | None = None, limite: int = 300) -> list[dict]:
+           busca: str = "", desde_ms: int | None = None, incompletas: bool = False,
+           limite: int = 300) -> list[dict]:
     sql = _SQL + " WHERE 1 = 1"
     args: list = []
     if status:
@@ -99,6 +121,8 @@ def listar(status: str | list[str] | None = None, maquina_id: int | None = None,
     if desde_ms:
         sql += " AND o.atualizado_ms >= ?"
         args.append(desde_ms)
+    if incompletas:
+        sql += " AND (o.produto_id IS NULL OR o.quantidade = 0)"
     # Fila: o que está rodando primeiro, depois a ordem de prioridade
     sql += """ ORDER BY CASE o.status WHEN 'em_producao' THEN 0 WHEN 'pausada' THEN 1
                  WHEN 'liberada' THEN 2 WHEN 'planejada' THEN 3 WHEN 'concluida' THEN 4 ELSE 5 END,
@@ -115,6 +139,9 @@ def contagem_por_status() -> dict[str, int]:
         out = {e: 0 for e in ESTADOS}
         for r in c.execute("SELECT status, COUNT(*) AS n FROM ordens GROUP BY status"):
             out[r["status"]] = r["n"]
+        out["incompletas"] = c.execute(
+            "SELECT COUNT(*) FROM ordens WHERE (produto_id IS NULL OR quantidade = 0) "
+            "AND status IN ('liberada', 'em_producao', 'pausada')").fetchone()[0]
     return out
 
 
@@ -135,7 +162,9 @@ def historico(ordem_id: int) -> list[dict]:
 def ordem_na_maquina(maquina_id: int) -> dict | None:
     """OP em execução agora numa máquina."""
     with get_conn() as c:
-        row = c.execute(_SQL + " WHERE e.maquina_id = ?", (maquina_id,)).fetchone()
+        row = c.execute(
+            _SQL + " WHERE o.id = (SELECT ordem_id FROM ordem_execucoes "
+                   "WHERE maquina_id = ? AND fim_ms IS NULL)", (maquina_id,)).fetchone()
     return _enriquecer(row) if row else None
 
 
@@ -156,7 +185,8 @@ def payload(c: sqlite3.Connection, ordem_id: int) -> dict:
     """Retrato da OP para webhooks e API."""
     o = _obter(c, ordem_id)
     return {
-        "numero": o["numero"], "status": o["status"], "ref_externa": o["ref_externa"],
+        "numero": o["numero"], "status": o["status"], "origem": o["origem"],
+        "ref_externa": o["ref_externa"],
         "produto_codigo": o["produto_codigo"], "produto_descricao": o["produto_descricao"],
         "molde_codigo": o["molde_codigo"], "maquina": o["maquina_codigo"],
         "quantidade": o["quantidade"], "qtd_produzida": o["qtd_produzida"],
@@ -179,6 +209,12 @@ def _proximo_numero(c: sqlite3.Connection) -> str:
         (str(n), agora_ms()),
     )
     return f"OP-{n:06d}"
+
+
+def _fim_da_fila(c: sqlite3.Connection) -> int:
+    return c.execute(
+        "SELECT COALESCE(MAX(prioridade), 0) + 10 FROM ordens WHERE status IN "
+        "('planejada', 'liberada', 'em_producao', 'pausada')").fetchone()[0]
 
 
 def _data(valor, campo: str) -> str | None:
@@ -286,10 +322,7 @@ def criar(dados: dict, usuario: str = "", origem: str = "manual") -> int:
         elif c.execute("SELECT 1 FROM ordens WHERE numero = ?", (numero,)).fetchone():
             raise ValueError(f"Já existe uma ordem com o número '{numero}'.")
         if "prioridade" not in campos:
-            # entra no fim da fila
-            campos["prioridade"] = c.execute(
-                "SELECT COALESCE(MAX(prioridade), 0) + 10 FROM ordens WHERE status IN "
-                "('planejada', 'liberada', 'em_producao', 'pausada')").fetchone()[0]
+            campos["prioridade"] = _fim_da_fila(c)
         colunas = {
             "numero": numero, **refs, **campos, "origem": origem,
             "criado_por": usuario or "", "criado_ms": agora, "atualizado_ms": agora,
@@ -299,9 +332,31 @@ def criar(dados: dict, usuario: str = "", origem: str = "manual") -> int:
             f"INSERT INTO ordens ({nomes}) VALUES ({', '.join('?' * len(colunas))})",
             list(colunas.values()),
         ).lastrowid
-        _evento(c, ordem_id, "criada", f"origem: {origem}", usuario, agora)
+        _evento(c, ordem_id, "criada", f"origem: {ORIGENS.get(origem, origem)}", usuario, agora)
         eventos.publicar(c, "ordem.criada", payload(c, ordem_id))
     return ordem_id
+
+
+def garantir_do_chao(c: sqlite3.Connection, numero: str, ts_ms: int, maquina: dict,
+                     publicar: bool = True) -> tuple[int, bool]:
+    """Id da OP com esse número; se não existir, cria como "descoberta no chão de
+    fábrica" (o operador bateu um cartão de OP que o MES ainda não conhecia)."""
+    numero = str(numero).strip()[:40]
+    row = c.execute("SELECT id FROM ordens WHERE numero = ?", (numero,)).fetchone()
+    if row:
+        return row["id"], False
+    agora = agora_ms()
+    ordem_id = c.execute(
+        "INSERT INTO ordens (numero, quantidade, status, prioridade, origem, maquina_id, liberada_ms, "
+        "criado_por, criado_ms, atualizado_ms) VALUES (?, 0, 'liberada', ?, 'chao', ?, ?, 'cartão RFID', ?, ?)",
+        (numero, _fim_da_fila(c), maquina["id"], ts_ms, agora, agora),
+    ).lastrowid
+    _evento(c, ordem_id, "criada",
+            f"vista pela primeira vez no cartão de OP da {maquina['nome']} — falta completar o cadastro",
+            "", ts_ms)
+    if publicar:
+        eventos.publicar(c, "ordem.criada", payload(c, ordem_id))
+    return ordem_id, True
 
 
 def atualizar(ordem_id: int, dados: dict, usuario: str = "", origem: str = "manual") -> None:
@@ -329,7 +384,8 @@ def atualizar(ordem_id: int, dados: dict, usuario: str = "", origem: str = "manu
                 mudancas["numero"] = numero
         if any(k in dados for k in ("produto_id", "produto_codigo")) and refs.get("produto_id"):
             if refs["produto_id"] != o["produto_id"]:
-                if tem_producao:
+                # completar o produto de uma OP vinda do cartão é sempre permitido
+                if tem_producao and o["produto_id"] is not None:
                     raise ValueError("O produto não pode mudar depois que a OP entrou em produção.")
                 mudancas["produto_id"] = refs["produto_id"]
         if any(k in dados for k in ("molde_id", "molde_codigo")):
@@ -346,11 +402,17 @@ def atualizar(ordem_id: int, dados: dict, usuario: str = "", origem: str = "manu
         sets = ", ".join(f"{k} = ?" for k in alteradas)
         c.execute(f"UPDATE ordens SET {sets}, atualizado_ms = ? WHERE id = ?",
                   [mudancas[k] for k in alteradas] + [agora_ms(), ordem_id])
+        if "quantidade" in alteradas:
+            c.execute("UPDATE ordens SET meta_notificada = 0 WHERE id = ?", (ordem_id,))
         _evento(c, ordem_id, "editada", "campos: " + ", ".join(alteradas), usuario)
 
 
 def upsert_externo(dados: dict, origem: str, autor: str = "") -> tuple[int, bool]:
-    """Cria ou atualiza pela chave `numero` — é o que ERP e CSV usam (idempotente)."""
+    """Cria ou atualiza pela chave `numero` — é o que ERP e CSV usam (idempotente).
+
+    Se a OP já tinha nascido do cartão na máquina, é aqui que ela ganha produto,
+    quantidade e demais dados do PCP, sem perder a produção já contada.
+    """
     numero = cadastros._texto(dados.get("numero"), "Número da OP", 1, 40)
     existente = obter_por_numero(numero)
     if existente:
@@ -383,6 +445,90 @@ def reordenar(ids_em_ordem: list[int]) -> None:
                       (posicao * 10, agora_ms(), int(ordem_id)))
 
 
+# ------------------------------------------------- execuções (núcleo comum)
+def abrir_execucao(c: sqlite3.Connection, ordem_id: int, maquina: dict, inicio_ms: int,
+                   usuario: str = "", origem: str = "manual", turnos: list | None = None,
+                   reatribuir: bool = True, publicar: bool = True) -> None:
+    """Registra que a OP começou a rodar na máquina. Recebe a conexão de quem
+    chama porque é usada tanto pela tela quanto pela ingestão (cartão / molde)."""
+    o = _obter(c, ordem_id)
+    ja_rodou = c.execute("SELECT 1 FROM ordem_execucoes WHERE ordem_id = ? LIMIT 1", (ordem_id,)).fetchone()
+    quem = usuario or {"rfid": "cartão RFID", "molde": "auto"}.get(origem, "")
+    c.execute(
+        "INSERT INTO ordem_execucoes (ordem_id, maquina_id, inicio_ms, iniciado_por, origem) "
+        "VALUES (?, ?, ?, ?, ?)", (ordem_id, maquina["id"], inicio_ms, quem, origem))
+    c.execute(
+        "UPDATE ordens SET status = 'em_producao', maquina_id = ?, concluida_ms = NULL, "
+        "iniciada_ms = MIN(COALESCE(iniciada_ms, ?), ?), liberada_ms = COALESCE(liberada_ms, ?), "
+        "atualizado_ms = ? WHERE id = ?",
+        (maquina["id"], inicio_ms, inicio_ms, inicio_ms, agora_ms(), ordem_id))
+
+    detalhe = f"máquina {maquina['nome']} às {tempo.fmt(inicio_ms)}"
+    if origem == "rfid":
+        detalhe += " — cartão da OP batido no leitor"
+    elif origem == "molde":
+        detalhe += " — início automático: o molde da OP começou a ciclar"
+    if o["status"] in ("concluida", "cancelada"):
+        tipo = "reaberta"
+        detalhe += f" (estava {o['status_rotulo'].lower()})"
+    elif origem == "molde":
+        tipo = "iniciada_auto"
+    else:
+        tipo = "retomada" if ja_rodou else "iniciada"
+    # Pela tela, o histórico registra QUANDO foi apontado (auditoria; o horário
+    # retroativo está no detalhe). Pelo cartão/molde, o instante real do evento.
+    _evento(c, ordem_id, tipo, detalhe, usuario, None if origem == "manual" else inicio_ms)
+    if reatribuir:
+        lotes.reatribuir(c, dict(maquina), inicio_ms, None, turnos or [])
+    if publicar:
+        eventos.publicar(c, "ordem.iniciada", payload(c, ordem_id))
+
+
+def fechar_execucao_maquina(c: sqlite3.Connection, maquina_id: int, fim_ms: int,
+                            usuario: str = "", motivo: str = "troca") -> int | None:
+    """Encerra a execução aberta NA MÁQUINA. Devolve o id da OP que saiu."""
+    ex = c.execute("SELECT id, ordem_id, inicio_ms FROM ordem_execucoes "
+                   "WHERE maquina_id = ? AND fim_ms IS NULL", (maquina_id,)).fetchone()
+    if not ex:
+        return None
+    c.execute("UPDATE ordem_execucoes SET fim_ms = ?, encerrado_por = ?, motivo_fim = ? WHERE id = ?",
+              (max(fim_ms, ex["inicio_ms"]), usuario or "", motivo, ex["id"]))
+    return ex["ordem_id"]
+
+
+def definir_status_apos_saida(c: sqlite3.Connection, ordem_id: int, auto_concluir: bool,
+                              publicar: bool = True) -> str | None:
+    """A OP saiu de uma máquina (outra OP entrou no lugar). Se ela não roda em
+    mais nenhuma, vira 'concluída' (meta batida) ou 'pausada'."""
+    o = _obter(c, ordem_id)
+    if o["exec_abertas"] > 0 or o["status"] != "em_producao":
+        return None
+    bateu_meta = o["quantidade"] > 0 and o["qtd_boas"] >= o["quantidade"]
+    novo = "concluida" if (auto_concluir and bateu_meta) else "pausada"
+    fim = c.execute("SELECT MAX(fim_ms) FROM ordem_execucoes WHERE ordem_id = ?", (ordem_id,)).fetchone()[0]
+    c.execute("UPDATE ordens SET status = ?, concluida_ms = ?, atualizado_ms = ? WHERE id = ?",
+              (novo, fim if novo == "concluida" else None, agora_ms(), ordem_id))
+    detalhe = "saiu da máquina: outra OP foi apontada no leitor"
+    if novo == "concluida":
+        detalhe += " — quantidade planejada atingida"
+    _evento(c, ordem_id, novo, detalhe, "", fim)
+    if publicar:
+        eventos.publicar(c, f"ordem.{novo}", payload(c, ordem_id))
+    return novo
+
+
+def trocar_op_por_cartao(c: sqlite3.Connection, maquina: dict, numero: str, ts_ms: int,
+                         recente: bool = True) -> tuple[int, int | None, bool]:
+    """A máquina passou a apontar a OP `numero` (cartão RFID).
+
+    Devolve (id da OP que entrou, id da OP que saiu ou None, se a OP foi criada agora).
+    """
+    ordem_id, criada = garantir_do_chao(c, numero, ts_ms, maquina, publicar=recente)
+    saiu = fechar_execucao_maquina(c, maquina["id"], ts_ms, "", "troca")
+    abrir_execucao(c, ordem_id, maquina, ts_ms, origem="rfid", reatribuir=False, publicar=recente)
+    return ordem_id, (saiu if saiu != ordem_id else None), criada
+
+
 # ------------------------------------------------------- transições de estado
 def liberar(ordem_id: int, usuario: str = "") -> None:
     with get_conn() as c:
@@ -407,26 +553,6 @@ def recolher(ordem_id: int, usuario: str = "") -> None:
         _evento(c, ordem_id, "recolhida", "", usuario)
 
 
-def _fechar_execucao(c: sqlite3.Connection, ordem_id: int, fim_ms: int, usuario: str, motivo: str,
-                     turnos: list, reatribuir: bool = True) -> dict | None:
-    """Encerra a execução aberta da OP (se houver). Devolve a máquina afetada."""
-    ex = c.execute(
-        "SELECT e.*, q.nome AS maquina_nome FROM ordem_execucoes e JOIN maquinas q ON q.id = e.maquina_id "
-        "WHERE e.ordem_id = ? AND e.fim_ms IS NULL", (ordem_id,)).fetchone()
-    if not ex:
-        return None
-    if fim_ms < ex["inicio_ms"]:
-        raise ValueError(
-            f"O fim informado ({tempo.fmt(fim_ms)}) é anterior ao início da execução ({tempo.fmt(ex['inicio_ms'])}).")
-    c.execute("UPDATE ordem_execucoes SET fim_ms = ?, encerrado_por = ?, motivo_fim = ? WHERE id = ?",
-              (fim_ms, usuario or "", motivo, ex["id"]))
-    maquina = dict(c.execute("SELECT * FROM maquinas WHERE id = ?", (ex["maquina_id"],)).fetchone())
-    if reatribuir:
-        # o que a máquina produziu depois do fim deixa de pertencer à OP
-        lotes.reatribuir(c, maquina, fim_ms, None, turnos)
-    return maquina
-
-
 def _validar_instante(ms: int | None, rotulo: str) -> int:
     agora = agora_ms()
     if ms is None:
@@ -436,36 +562,57 @@ def _validar_instante(ms: int | None, rotulo: str) -> int:
     return ms
 
 
-def iniciar_na_conexao(c: sqlite3.Connection, ordem_id: int, maquina_id: int, inicio_ms: int,
-                       usuario: str, turnos: list, automatico: bool = False,
-                       reatribuir: bool = True) -> None:
-    """Núcleo do início de execução. Usado pelo início manual e pelo automático
-    (ingestão), por isso recebe a conexão de quem chama."""
-    o = _obter(c, ordem_id)
-    maquina = c.execute("SELECT * FROM maquinas WHERE id = ?", (maquina_id,)).fetchone()
-    c.execute(
-        "INSERT INTO ordem_execucoes (ordem_id, maquina_id, inicio_ms, iniciado_por) VALUES (?, ?, ?, ?)",
-        (ordem_id, maquina_id, inicio_ms, usuario or ("auto" if automatico else "")))
+def _fechar_execucoes_da_ordem(c: sqlite3.Connection, ordem_id: int, fim_ms: int, usuario: str,
+                               motivo: str, turnos: list, reatribuir: bool = True,
+                               maquina_id: int | None = None) -> list[dict]:
+    """Encerra as execuções abertas da OP (todas, ou só a da máquina indicada)."""
+    sql = ("SELECT e.id, e.maquina_id, e.inicio_ms FROM ordem_execucoes e "
+           "WHERE e.ordem_id = ? AND e.fim_ms IS NULL")
+    args: list = [ordem_id]
+    if maquina_id:
+        sql += " AND e.maquina_id = ?"
+        args.append(maquina_id)
+    fechadas = []
+    for ex in c.execute(sql, args).fetchall():
+        if fim_ms < ex["inicio_ms"]:
+            raise ValueError(
+                f"O fim informado ({tempo.fmt(fim_ms)}) é anterior ao início da execução "
+                f"({tempo.fmt(ex['inicio_ms'])}).")
+        c.execute("UPDATE ordem_execucoes SET fim_ms = ?, encerrado_por = ?, motivo_fim = ? WHERE id = ?",
+                  (fim_ms, usuario or "", motivo, ex["id"]))
+        maquina = dict(c.execute("SELECT * FROM maquinas WHERE id = ?", (ex["maquina_id"],)).fetchone())
+        if reatribuir:
+            # o que a máquina produziu depois do fim deixa de pertencer à OP
+            lotes.reatribuir(c, maquina, fim_ms, None, turnos)
+        fechadas.append(maquina)
+    return fechadas
+
+
+def _encerrar(c: sqlite3.Connection, ordem_id: int, novo_status: str, fim_ms: int, usuario: str,
+              turnos: list, detalhe: str = "", reatribuir: bool = True,
+              maquina_id: int | None = None) -> None:
+    motivo = {"pausada": "pausa", "concluida": "conclusao", "cancelada": "cancelamento"}[novo_status]
+    maquinas = _fechar_execucoes_da_ordem(c, ordem_id, fim_ms, usuario, motivo, turnos, reatribuir, maquina_id)
+    ainda_roda = c.execute(
+        "SELECT 1 FROM ordem_execucoes WHERE ordem_id = ? AND fim_ms IS NULL", (ordem_id,)).fetchone()
+    onde = ", ".join(m["nome"] for m in maquinas)
+    onde = f"{onde} às {tempo.fmt(fim_ms)}" if onde else ""
+    if ainda_roda:
+        # pausou só uma das máquinas: a OP continua em produção nas outras
+        _evento(c, ordem_id, "pausada", " — ".join(x for x in (onde, "segue em outra máquina", detalhe) if x), usuario)
+        return
     agora = agora_ms()
-    c.execute(
-        "UPDATE ordens SET status = 'em_producao', maquina_id = ?, "
-        "iniciada_ms = MIN(COALESCE(iniciada_ms, ?), ?), liberada_ms = COALESCE(liberada_ms, ?), "
-        "atualizado_ms = ? WHERE id = ?",
-        (maquina_id, inicio_ms, inicio_ms, inicio_ms, agora, ordem_id))
-    detalhe = f"máquina {maquina['nome']} às {tempo.fmt(inicio_ms)}"
-    if automatico:
-        detalhe += " — início automático: o molde da OP começou a ciclar"
-    retomada = o["status"] == "pausada"
-    _evento(c, ordem_id, "retomada" if retomada else ("iniciada_auto" if automatico else "iniciada"),
-            detalhe, usuario)
-    if reatribuir:
-        lotes.reatribuir(c, dict(maquina), inicio_ms, None, turnos)
-    eventos.publicar(c, "ordem.iniciada", payload(c, ordem_id))
+    extra = ", concluida_ms = ?" if novo_status == "concluida" else ""
+    args = [novo_status, agora] + ([fim_ms] if novo_status == "concluida" else []) + [ordem_id]
+    c.execute(f"UPDATE ordens SET status = ?, atualizado_ms = ?{extra} WHERE id = ?", args)
+    lotes.recalcular_ordens(c, [ordem_id])
+    _evento(c, ordem_id, novo_status, " — ".join(x for x in (onde, detalhe) if x), usuario)
+    eventos.publicar(c, f"ordem.{novo_status}", payload(c, ordem_id))
 
 
 def iniciar(ordem_id: int, usuario: str = "", maquina_id: int | None = None,
             inicio_ms: int | None = None, substituir: str | None = None) -> None:
-    """Põe a OP em produção numa máquina.
+    """Põe a OP em produção numa máquina, pela tela.
 
     inicio_ms permite apontamento retroativo ("começou às 6h, só registrei agora").
     substituir = 'pausar' | 'concluir' encerra a OP que estiver na máquina (troca de OP).
@@ -473,7 +620,7 @@ def iniciar(ordem_id: int, usuario: str = "", maquina_id: int | None = None,
     turnos = cadastros.turnos_ativos()
     with get_conn() as c:
         o = _obter(c, ordem_id)
-        if o["status"] not in ("planejada", "liberada", "pausada"):
+        if o["status"] not in ("planejada", "liberada", "pausada", "em_producao"):
             raise ValueError(f"OP {o['numero']} está {o['status_rotulo'].lower()} — não pode ser iniciada.")
         mid = maquina_id or o["maquina_id"]
         if not mid:
@@ -489,6 +636,8 @@ def iniciar(ordem_id: int, usuario: str = "", maquina_id: int | None = None,
             "SELECT e.ordem_id, e.inicio_ms, x.numero FROM ordem_execucoes e "
             "JOIN ordens x ON x.id = e.ordem_id WHERE e.maquina_id = ? AND e.fim_ms IS NULL", (mid,)
         ).fetchone()
+        if ocupante and ocupante["ordem_id"] == ordem_id:
+            raise ValueError(f"OP {o['numero']} já está em execução na máquina {maquina['nome']}.")
         if ocupante:
             if substituir not in ("pausar", "concluir"):
                 raise ValueError(
@@ -498,7 +647,8 @@ def iniciar(ordem_id: int, usuario: str = "", maquina_id: int | None = None,
                 raise ValueError(
                     f"O início informado é anterior ao início da OP {ocupante['numero']} que está na máquina.")
             _encerrar(c, ocupante["ordem_id"], "concluida" if substituir == "concluir" else "pausada",
-                      inicio, usuario, turnos, reatribuir=False)
+                      inicio, usuario, turnos, reatribuir=False,
+                      maquina_id=None if substituir == "concluir" else mid)
 
         ultimo_fim = c.execute(
             "SELECT MAX(fim_ms) FROM ordem_execucoes WHERE maquina_id = ?", (mid,)).fetchone()[0]
@@ -506,30 +656,18 @@ def iniciar(ordem_id: int, usuario: str = "", maquina_id: int | None = None,
             raise ValueError(
                 f"Nesse horário a máquina {maquina['nome']} ainda executava outra OP (até {tempo.fmt(ultimo_fim)}). "
                 "Informe um início a partir daí.")
-        iniciar_na_conexao(c, ordem_id, mid, inicio, usuario, turnos)
+        abrir_execucao(c, ordem_id, dict(maquina), inicio, usuario, "manual", turnos)
 
 
-def _encerrar(c: sqlite3.Connection, ordem_id: int, novo_status: str, fim_ms: int, usuario: str,
-              turnos: list, detalhe: str = "", reatribuir: bool = True) -> None:
-    motivo = {"pausada": "pausa", "concluida": "conclusao", "cancelada": "cancelamento"}[novo_status]
-    maquina = _fechar_execucao(c, ordem_id, fim_ms, usuario, motivo, turnos, reatribuir)
-    agora = agora_ms()
-    extra = ", concluida_ms = ?" if novo_status == "concluida" else ""
-    args = [novo_status, agora] + ([fim_ms] if novo_status == "concluida" else []) + [ordem_id]
-    c.execute(f"UPDATE ordens SET status = ?, atualizado_ms = ?{extra} WHERE id = ?", args)
-    lotes.recalcular_ordens(c, [ordem_id])
-    onde = f"máquina {maquina['nome']} às {tempo.fmt(fim_ms)}" if maquina else ""
-    _evento(c, ordem_id, novo_status, " — ".join(x for x in (onde, detalhe) if x), usuario)
-    eventos.publicar(c, f"ordem.{novo_status}", payload(c, ordem_id))
-
-
-def pausar(ordem_id: int, usuario: str = "", fim_ms: int | None = None, observacao: str = "") -> None:
+def pausar(ordem_id: int, usuario: str = "", fim_ms: int | None = None, observacao: str = "",
+           maquina_id: int | None = None) -> None:
     turnos = cadastros.turnos_ativos()
     with get_conn() as c:
         o = _obter(c, ordem_id)
         if o["status"] != "em_producao":
             raise ValueError(f"OP {o['numero']} está {o['status_rotulo'].lower()} — só uma OP em produção pode ser pausada.")
-        _encerrar(c, ordem_id, "pausada", _validar_instante(fim_ms, "O fim"), usuario, turnos, observacao)
+        _encerrar(c, ordem_id, "pausada", _validar_instante(fim_ms, "O fim"), usuario, turnos,
+                  observacao, maquina_id=maquina_id)
 
 
 def concluir(ordem_id: int, usuario: str = "", fim_ms: int | None = None, observacao: str = "") -> None:
@@ -564,7 +702,7 @@ def reabrir(ordem_id: int, usuario: str = "") -> None:
         _evento(c, ordem_id, "reaberta", f"voltou para {ROTULOS[novo].lower()}", usuario)
 
 
-# ------------------------------------------------------------ início automático
+# ------------------------------------------------------------ automatismos
 def candidata_auto_inicio(c: sqlite3.Connection, maquina_id: int, molde_id: int,
                           ts_ms: int) -> int | None:
     """OP liberada cujo molde acabou de começar a ciclar nesta máquina.
@@ -585,12 +723,41 @@ def notificar_meta(c: sqlite3.Connection, ordem_ids) -> int:
     n = 0
     for ordem_id in set(ordem_ids):
         row = c.execute(
-            "SELECT id FROM ordens WHERE id = ? AND meta_notificada = 0 AND status IN ('em_producao', 'pausada') "
-            "AND (qtd_produzida - qtd_refugo) >= quantidade", (ordem_id,)).fetchone()
+            "SELECT id FROM ordens WHERE id = ? AND meta_notificada = 0 AND quantidade > 0 "
+            "AND status IN ('em_producao', 'pausada') AND (qtd_produzida - qtd_refugo) >= quantidade",
+            (ordem_id,)).fetchone()
         if not row:
             continue
         c.execute("UPDATE ordens SET meta_notificada = 1 WHERE id = ?", (ordem_id,))
         _evento(c, ordem_id, "meta_atingida", "peças boas alcançaram a quantidade planejada")
         eventos.publicar(c, "ordem.meta_atingida", payload(c, ordem_id))
         n += 1
+    return n
+
+
+def encerrar_inativas(dias: int) -> int:
+    """Conclui OPs pausadas que saíram da máquina pelo cartão e não voltaram.
+
+    Em fábrica com cartão de OP ninguém "conclui" na tela: a OP só deixa de ser
+    apontada. Sem esta faxina, a lista de pausadas cresceria para sempre.
+    """
+    if dias <= 0:
+        return 0
+    limite = agora_ms() - dias * 86400 * 1000
+    n = 0
+    with get_conn() as c:
+        candidatas = c.execute("""
+            SELECT o.id,
+                   (SELECT MAX(e.fim_ms) FROM ordem_execucoes e WHERE e.ordem_id = o.id) AS ultimo_fim,
+                   (SELECT e.origem FROM ordem_execucoes e WHERE e.ordem_id = o.id
+                     ORDER BY e.inicio_ms DESC LIMIT 1) AS ultima_origem
+            FROM ordens o WHERE o.status = 'pausada'""").fetchall()
+        for r in candidatas:
+            if r["ultima_origem"] != "rfid" or r["ultimo_fim"] is None or r["ultimo_fim"] > limite:
+                continue
+            c.execute("UPDATE ordens SET status = 'concluida', concluida_ms = ?, atualizado_ms = ? WHERE id = ?",
+                      (r["ultimo_fim"], agora_ms(), r["id"]))
+            _evento(c, r["id"], "concluida", f"encerrada automaticamente: {dias} dias sem voltar à máquina")
+            eventos.publicar(c, "ordem.concluida", payload(c, r["id"]))
+            n += 1
     return n

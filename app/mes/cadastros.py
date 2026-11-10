@@ -121,6 +121,21 @@ def sincronizar_maquinas(plataforma: str, dispositivos: list[dict]) -> dict:
     return {"novas": novas, "total": total}
 
 
+def desativar_recem_criadas(plataforma: str, codigos: list[str]) -> int:
+    """Desativa máquinas recém-cadastradas que não são de produção (dispositivo sem
+    variável de ciclo: esteira, gateway...). Não toca em máquina que o gestor já
+    editou nem em máquina que já tem ciclos coletados."""
+    if not codigos:
+        return 0
+    marcas = ",".join("?" * len(codigos))
+    with get_conn() as c:
+        return c.execute(
+            f"UPDATE maquinas SET ativo = 0 WHERE plataforma = ? AND codigo IN ({marcas}) "
+            "AND criado_ms = atualizado_ms "
+            "AND NOT EXISTS (SELECT 1 FROM ciclos x WHERE x.maquina_id = maquinas.id)",
+            [plataforma, *codigos]).rowcount
+
+
 def atualizar_maquina(maquina_id: int, dados: dict) -> None:
     sets, vals = [], []
     if "nome" in dados:

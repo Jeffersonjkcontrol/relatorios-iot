@@ -2,6 +2,9 @@
 
 Fica no banco (e não no .env) porque muda em operação — ativar a coleta, trocar
 o nome de uma variável — sem reiniciar o container.
+
+Os nomes de variável são configuráveis porque cada firmware publica com seus
+próprios labels. Os padrões abaixo são os do firmware InjetNitron V12.x.
 """
 from __future__ import annotations
 
@@ -15,17 +18,62 @@ PADROES: dict[str, str] = {
     "plataforma": "ubidots",
     "intervalo_s": "60",             # período do coletor
     "backfill_dias": "7",            # histórico trazido na ativação
-    # --- nomes das variáveis na plataforma IoT ---
-    "var_ciclo": "ciclo",            # tempo de ciclo; contexto traz o molde
-    "var_contador": "producao",      # totalizador de peças
+
+    # --- variáveis na plataforma IoT (papel -> label) ---
+    "var_ciclo": "ciclo",            # tempo de ciclo; o contexto traz a OP (e/ou o molde)
+    "var_contador": "injecao_hora",  # totalizador de peças
     "var_parada": "parada",          # 0/1
     "var_cavidade": "cavidade",      # cavidades configuradas no dispositivo
-    "var_motivo": "maq_rfid",        # cartão do motivo de parada
+    "var_alerta": "alertaparada",    # tempo sem injeção até sinalizar parada (ms)
+    "var_motivo": "maq_rfid",        # cartão de máquina: evento/motivo de parada
     "var_funcionario": "fun_rfid",   # cartão do operador
+    "var_cod_fun": "cod_fun_rfid",   # cartão com o código de funcionário
+    "var_op": "op_rfid",             # cartão da ordem de produção
+    "var_qualidade": "quali_rfid",   # cartão da qualidade (aprovado / reprovado)
+    "var_bloqueio": "cont_bloq",     # 1 = contagem de peças bloqueada no dispositivo
+    "var_reinicio": "reset_reason",  # causa do último reinício do dispositivo
+
+    # --- chaves do contexto que acompanha ciclo e contador ---
+    "ctx_op": "op_rfid",             # nº da OP apontada no leitor da máquina
+    "ctx_molde": "molde",            # descrição do molde ("nome|#código|#30seg")
+
     # --- regras ---
+    "alerta_parada_s": "300",        # usado quando a variável de alerta não existe na conta
     "auto_cadastrar_moldes": "1",    # molde novo no contexto vira cadastro
     "auto_iniciar_op": "1",          # OP liberada inicia quando o molde dela começa a ciclar
+    "auto_concluir_na_troca": "1",   # OP substituída na máquina com a meta batida é concluída
+    "auto_concluir_dias": "7",       # OP pausada sem produção há N dias é encerrada (0 = nunca)
     "ocioso_min": "3",               # sem ciclo há N minutos (e sem parada) = ociosa
+}
+
+# Papel usado pela ingestão -> chave de configuração com o label da variável
+PAPEL_PARA_CONFIG: dict[str, str] = {
+    "ciclo": "var_ciclo", "contador": "var_contador", "parada": "var_parada",
+    "cavidade": "var_cavidade", "alerta": "var_alerta", "motivo": "var_motivo",
+    "funcionario": "var_funcionario", "cod_fun": "var_cod_fun", "op": "var_op",
+    "qualidade": "var_qualidade", "bloqueio": "var_bloqueio", "reinicio": "var_reinicio",
+}
+
+# Na ativação, se o label padrão não existir na conta, tenta estes (outros firmwares)
+ALTERNATIVAS: dict[str, list[str]] = {
+    "var_contador": ["injecao_hora", "producao"],
+}
+
+DESCRICOES: dict[str, str] = {
+    "var_ciclo": "Tempo de ciclo",
+    "var_contador": "Totalizador de peças",
+    "var_parada": "Parada (0/1)",
+    "var_cavidade": "Cavidades",
+    "var_alerta": "Tempo de alerta de parada",
+    "var_motivo": "Cartão de máquina (evento de parada)",
+    "var_funcionario": "Cartão do operador",
+    "var_cod_fun": "Cartão cod_fun (código de funcionário)",
+    "var_op": "Cartão da OP",
+    "var_qualidade": "Cartão da qualidade",
+    "var_bloqueio": "Contagem bloqueada",
+    "var_reinicio": "Reinício do dispositivo",
+    "ctx_op": "Chave do contexto com o nº da OP",
+    "ctx_molde": "Chave do contexto com o molde",
 }
 
 
@@ -68,6 +116,13 @@ def todas() -> dict[str, str]:
         for row in c.execute("SELECT chave, valor FROM config"):
             out[row["chave"]] = row["valor"]
     return out
+
+
+def variaveis(cfg: dict[str, str] | None = None) -> dict[str, str]:
+    """{papel: label} só com os papéis que têm variável configurada."""
+    cfg = cfg or todas()
+    return {papel: cfg[chave].strip() for papel, chave in PAPEL_PARA_CONFIG.items()
+            if cfg.get(chave, "").strip()}
 
 
 def coletor_permitido() -> bool:

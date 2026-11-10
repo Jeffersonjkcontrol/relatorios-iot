@@ -145,7 +145,7 @@ def recalcular_lotes(c: sqlite3.Connection, lote_ids) -> None:
                 refugo = COALESCE((SELECT SUM(r.quantidade) FROM refugos r WHERE r.lote_id = lotes.id), 0),
                 inicio_ms = COALESCE((
                     SELECT MIN(t) FROM (
-                        SELECT MIN(ts_ms) AS t FROM contagens WHERE lote_id = lotes.id
+                        SELECT MIN(ref_ms) AS t FROM contagens WHERE lote_id = lotes.id
                         UNION ALL SELECT MIN(ts_ms) FROM ciclos WHERE lote_id = lotes.id)), inicio_ms),
                 fim_ms = COALESCE((
                     SELECT MAX(t) FROM (
@@ -182,45 +182,53 @@ def lote_para_refugo(c: sqlite3.Connection, maquina_id: int, ordem_id: int | Non
 
 
 # ----------------------------------------------------------------- reatribuição
+_TEMPO = {"ciclos": "ts_ms", "contagens": "ref_ms", "paradas": "inicio_ms"}
+
+
 def reatribuir(c: sqlite3.Connection, maquina: dict, ini_ms: int, fim_ms: int | None,
                turnos: list[tempo.Turno]) -> dict:
     """Refaz OP e lote de tudo que a máquina produziu em [ini_ms, fim_ms).
 
-    Chamado sempre que os intervalos de execução mudam.
+    Chamado sempre que os intervalos de execução mudam (início retroativo,
+    correção de fim). Pontos em que o PRÓPRIO dispositivo informou a OP (op_ctx,
+    cartão RFID) não mudam de OP: o cartão é a fonte da verdade.
     """
     fim = fim_ms if fim_ms is not None else FIM_DOS_TEMPOS
     mid = maquina["id"]
     janela = (mid, ini_ms, fim)
 
     ordens_antes = {r[0] for r in c.execute(
-        "SELECT DISTINCT ordem_id FROM contagens WHERE maquina_id = ? AND ts_ms >= ? AND ts_ms < ? "
+        "SELECT DISTINCT ordem_id FROM contagens WHERE maquina_id = ? AND ref_ms >= ? AND ref_ms < ? "
         "AND ordem_id IS NOT NULL", janela)}
     lotes_antes = {r[0] for r in c.execute(
-        "SELECT DISTINCT lote_id FROM contagens WHERE maquina_id = ? AND ts_ms >= ? AND ts_ms < ? "
+        "SELECT DISTINCT lote_id FROM contagens WHERE maquina_id = ? AND ref_ms >= ? AND ref_ms < ? "
         "AND lote_id IS NOT NULL "
         "UNION SELECT DISTINCT lote_id FROM ciclos WHERE maquina_id = ? AND ts_ms >= ? AND ts_ms < ? "
         "AND lote_id IS NOT NULL", janela + janela)}
 
     # 1) OP pelo intervalo de execução que cobre o instante
-    for tabela, coluna in (("ciclos", "ts_ms"), ("contagens", "ts_ms"), ("paradas", "inicio_ms")):
+    for tabela, coluna in _TEMPO.items():
+        so_sem_cartao = "" if tabela == "paradas" else " AND op_ctx IS NULL"
         c.execute(f"""
             UPDATE {tabela} SET ordem_id = (
                 SELECT e.ordem_id FROM ordem_execucoes e
                 WHERE e.maquina_id = {tabela}.maquina_id AND e.inicio_ms <= {tabela}.{coluna}
                   AND (e.fim_ms IS NULL OR {tabela}.{coluna} < e.fim_ms)
                 ORDER BY e.inicio_ms DESC LIMIT 1)
-            WHERE maquina_id = ? AND {coluna} >= ? AND {coluna} < ?""", janela)
+            WHERE maquina_id = ? AND {coluna} >= ? AND {coluna} < ?{so_sem_cartao}""", janela)
 
     # 2) Lote de cada ponto (depende da OP, do dia fabril, do turno e do molde)
     atrib = Atribuidor(c, maquina, turnos, desde_ms=ini_ms)
     movidos = 0
     for tabela in ("contagens", "ciclos"):
+        coluna = _TEMPO[tabela]
+        filtro = " AND pecas > 0" if tabela == "contagens" else ""
         linhas = c.execute(
-            f"SELECT id, ts_ms, ordem_id, molde_id, lote_id FROM {tabela} "
-            "WHERE maquina_id = ? AND ts_ms >= ? AND ts_ms < ?", janela).fetchall()
+            f"SELECT id, {coluna} AS t, ordem_id, molde_id, lote_id FROM {tabela} "
+            f"WHERE maquina_id = ? AND {coluna} >= ? AND {coluna} < ?{filtro}", janela).fetchall()
         mudancas = []
         for ln in linhas:
-            novo = atrib.lote_para(ln["ts_ms"], ln["ordem_id"], ln["molde_id"])
+            novo = atrib.lote_para(ln["t"], ln["ordem_id"], ln["molde_id"])
             if novo != ln["lote_id"]:
                 mudancas.append((novo, ln["id"]))
         if mudancas:
