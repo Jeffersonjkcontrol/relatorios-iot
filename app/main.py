@@ -54,6 +54,25 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
+# ---- MES: API das telas + coletor em segundo plano ----
+from app.mes import config as mes_config            # noqa: E402
+from app.mes.coletor import coletor as mes_coletor  # noqa: E402
+from app.mes.rotas import registrar_paginas as mes_registrar_paginas, router as mes_router  # noqa: E402
+
+app.include_router(mes_router)
+
+
+@app.on_event("startup")
+async def _mes_iniciar():
+    if mes_config.mes_ativo() and mes_config.coletor_permitido():
+        mes_coletor.iniciar()
+
+
+@app.on_event("shutdown")
+async def _mes_parar():
+    await mes_coletor.parar()
+
+
 def _client(platform_id: str) -> PlatformClient:
     base_url, token = settings.platform(platform_id)
     if not token:
@@ -74,6 +93,9 @@ def tctx(request: Request, **extra) -> dict:
     }
     base.update(extra)
     return base
+
+
+mes_registrar_paginas(app, templates, tctx)
 
 
 # ============================================================

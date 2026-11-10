@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}Fábrica{% endblock %}
+
+{% block content %}
+<div class="mes-wide"></div>
+<div class="page-header" style="display:flex; align-items:end; gap:var(--space-4); flex-wrap:wrap;">
+  <div style="flex:1; min-width:260px;">
+    <h1>Fábrica</h1>
+    <p id="mes-sub">Produção, paradas e ordens a partir dos dados coletados das máquinas.</p>
+  </div>
+  <label style="flex:0 0 180px;">Período
+    <select id="periodo">
+      <option value="hoje">Hoje</option>
+      <option value="turno">Turno atual</option>
+      <option value="ontem">Ontem</option>
+      <option value="7d">Últimos 7 dias</option>
+      <option value="30d">Últimos 30 dias</option>
+    </select>
+  </label>
+</div>
+
+<div id="mes-aviso"></div>
+
+<div class="tabs" role="tablist">
+  <button class="tab active" data-aba="geral">Visão geral</button>
+  <button class="tab" data-aba="producao">Produção</button>
+  <button class="tab" data-aba="paradas">Paradas</button>
+  <button class="tab" data-aba="oee">OEE</button>
+  <button class="tab" data-aba="ordens">Ordens</button>
+</div>
+
+<section class="aba" id="aba-geral">
+  <div class="stats-grid" id="kpis"></div>
+  <div class="card" style="padding:var(--space-3) var(--space-4); display:flex; gap:var(--space-2); flex-wrap:wrap; align-items:center;">
+    <span class="hint">Mostrar:</span>
+    <button class="tab active" data-filtro="">Todas</button>
+    <button class="tab" data-filtro="produzindo">Produzindo</button>
+    <button class="tab" data-filtro="parada">Paradas</button>
+    <button class="tab" data-filtro="ociosa">Ociosas</button>
+    <span class="status" id="geral-status" style="margin-left:auto;"></span>
+  </div>
+  <div class="live-grid" id="grade"></div>
+</section>
+
+<section class="aba hidden" id="aba-producao">
+  <div class="card">
+    <h2 class="card-titulo">Peças por hora</h2>
+    <div class="barras" id="graf-horas"></div>
+  </div>
+  <div class="card">
+    <h2 class="card-titulo">Por máquina</h2>
+    <div class="table-wrap"><table class="moldes-table"><thead><tr>
+      <th>Máquina</th><th class="num">Peças</th><th class="num">Ciclo médio</th><th class="num">Leituras de ciclo</th>
+    </tr></thead><tbody id="tab-maquinas"></tbody></table></div>
+  </div>
+</section>
+
+<section class="aba hidden" id="aba-paradas">
+  <div class="stats-grid" id="par-kpis"></div>
+  <div class="card">
+    <h2 class="card-titulo">Tempo parado por motivo</h2>
+    <div id="pareto"></div>
+    <p class="hint" id="pareto-dica"></p>
+  </div>
+  <div class="card">
+    <h2 class="card-titulo">Eventos <span class="hint" id="par-n"></span></h2>
+    <div class="table-wrap"><table class="moldes-table"><thead><tr>
+      <th>Máquina</th><th>Início</th><th>Fim</th><th class="num">Duração</th><th>Motivo</th><th>OP</th><th>Operador</th>
+    </tr></thead><tbody id="tab-paradas"></tbody></table></div>
+  </div>
+</section>
+
+<section class="aba hidden" id="aba-oee">
+  <div class="stats-grid" id="oee-kpis"></div>
+  <div class="card">
+    <h2 class="card-titulo">Por máquina</h2>
+    <div class="table-wrap"><table class="moldes-table"><thead><tr>
+      <th>Máquina</th><th class="num">OEE</th><th class="num">Disponib.</th><th class="num">Performance</th>
+      <th class="num">Qualidade</th><th class="num">Peças</th><th class="num">Parado</th>
+    </tr></thead><tbody id="tab-oee"></tbody></table></div>
+    <p class="hint">* Performance estimada: a OP ainda não tem ciclo padrão cadastrado, então a referência é o ciclo que a própria máquina sustentou no período.</p>
+  </div>
+</section>
+
+<section class="aba hidden" id="aba-ordens">
+  <div class="card" style="padding:var(--space-3) var(--space-4); display:flex; gap:var(--space-2); flex-wrap:wrap; align-items:center;">
+    <button class="tab active" data-st="em_producao">Em produção <b id="n-em_producao"></b></button>
+    <button class="tab" data-st="pausada">Pausadas <b id="n-pausada"></b></button>
+    <button class="tab" data-st="planejada,liberada">Na fila <b id="n-fila"></b></button>
+    <button class="tab" data-st="concluida,cancelada">Encerradas <b id="n-concluida"></b></button>
+    <input type="text" id="busca-op" placeholder="Buscar OP, produto, cliente" style="margin-left:auto; width:240px;">
+  </div>
+  <div class="card">
+    <div class="table-wrap" style="max-height:620px;"><table class="moldes-table"><thead><tr>
+      <th>OP</th><th>Produto</th><th>Máquina</th><th class="num">Boas</th><th class="num">Planejado</th>
+      <th style="min-width:140px;">Progresso</th><th>Origem</th><th></th>
+    </tr></thead><tbody id="tab-ordens"></tbody></table></div>
+  </div>
+</section>
+
+<dialog id="dlg-op" class="dlg">
+  <form method="dialog" id="form-op">
+    <h2 class="card-titulo">Completar OP <span id="dlg-num"></span></h2>
+    <p class="hint">Esta OP foi vista no cartão da máquina. Informe os dados que o PCP tem dela.</p>
+    <div class="grid">
+      <label>Código do produto<input name="produto_codigo" required></label>
+      <label>Descrição<input name="produto_descricao" required minlength="2"></label>
+      <label>Quantidade planejada<input name="quantidade" type="number" min="1" required></label>
+      <label>Ciclo padrão (s)<input name="ciclo_padrao_s" type="number" step="0.1" min="0.1"></label>
+    </div>
+    <p class="error" id="dlg-erro"></p>
+    <div class="actions">
+      <button type="submit" class="btn-primary" value="ok">Salvar</button>
+      <button type="button" class="btn-secondary" onclick="this.closest('dialog').close()">Cancelar</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const GESTOR = {{ 'true' if current_user and current_user.role == 'gestor' else 'false' }};
+const { jget } = window.app;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = n => Number(n || 0).toLocaleString('pt-BR');
+const pct = v => v == null ? '—' : (v * 100).toFixed(1).replace('.', ',') + '%';
+const hora = ms => ms ? new Date(ms).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
+function dur(s) {
+  if (s == null) return '—';
+  if (s < 60) return Math.round(s) + ' s';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h${String(m).padStart(2, '0')}` : `${m} min`;
+}
+const ROTULO = {produzindo: 'Produzindo', parada: 'Parada', ociosa: 'Ociosa', sem_dados: 'Sem dados'};
+const CLASSE = {parada: 'Parada', setup: 'Setup', planejada: 'Planejada', producao: 'Produção'};
+const LIVE = {produzindo: 'ativo', parada: 'parado', ociosa: 'ocioso', sem_dados: 'erro'};
+async function post(url, corpo) {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corpo || {})});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+  return d;
+}
+const q = () => `periodo=${encodeURIComponent($('periodo').value)}`;
+const stat = (lbl, val) => `<div class="stat"><span class="lbl">${lbl}</span><span class="val">${val}</span></div>`;
+
+/* ---------------- abas ---------------- */
+let aba = location.hash.slice(1) || 'geral', filtro = '', statusOp = 'em_producao', maquinas = [];
+function mostrar(nome) {
+  if (!$('aba-' + nome)) nome = 'geral';
+  aba = nome; history.replaceState(null, '', '#' + nome);
+  document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.aba === nome));
+  document.querySelectorAll('.aba').forEach(s => s.classList.toggle('hidden', s.id !== 'aba-' + nome));
+  carregar();
+}
+document.querySelectorAll('.tabs .tab').forEach(b => b.onclick = () => mostrar(b.dataset.aba));
+$('periodo').onchange = () => carregar();
+
+/* ---------------- visão geral ---------------- */
+async function geral() {
+  const [r, ms] = await Promise.all([jget('/api/mes/resumo?' + q()), jget('/api/mes/maquinas')]);
+  maquinas = ms;
+  const m = r.maquinas, o = r.oee;
+  $('kpis').innerHTML =
+    stat('Produzindo', `${m.produzindo} de ${r.total_maquinas}`) + stat('Paradas', m.parada) + stat('Ociosas', m.ociosa) +
+    stat('Peças no período', num(o.pecas)) + stat('OEE', pct(o.oee)) + stat('OPs em produção', r.ops_em_producao) +
+    stat('Paradas com motivo', r.paradas.pct_apontadas == null ? '—' : String(r.paradas.pct_apontadas).replace('.', ',') + '%');
+  $('mes-sub').textContent = r.periodo.rotulo + ' · ' + r.total_maquinas + ' máquinas';
+  grade();
+  $('geral-status').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
+}
+function grade() {
+  const lista = maquinas.filter(m => !filtro || m.status === filtro);
+  $('grade').innerHTML = lista.map(m => {
+    const op = m.op, p = m.parada;
+    const barra = op && op.pct != null ? `<div class="prog"><i style="width:${op.pct}%"></i></div>` : '';
+    return `<div class="live-card live-card-${LIVE[m.status]}">
+      <div class="live-card-head"><div><div class="live-card-name">${esc(m.nome)}</div>
+        <div class="live-card-label">${op ? 'OP ' + esc(op.numero) : 'sem OP'}</div></div>
+        <span class="live-status-badge live-${LIVE[m.status]}">${ROTULO[m.status]}</span></div>
+      <div class="live-card-val">${m.ciclo_s == null ? '—' : m.ciclo_s.toFixed(1).replace('.', ',')}<span class="live-card-unit">s</span></div>
+      <div class="live-card-meta"><span>${num(m.pecas_dia)} peças hoje</span><span>${op ? num(op.boas) + (op.quantidade ? ' / ' + num(op.quantidade) : '') : ''}</span></div>
+      ${barra}
+      <div class="live-card-foot">${p ? `Parada há ${dur(p.duracao_s)} — <strong>${esc(p.nome)}</strong><br>` : ''}
+        ${op && op.produto ? esc(op.produto) + '<br>' : ''}
+        ${m.operador ? 'Operador: ' + esc(m.operador.nome || m.operador.codigo) : ''}</div></div>`;
+  }).join('') || '<div class="live-loading">Nenhuma máquina nesse filtro.</div>';
+}
+document.querySelectorAll('[data-filtro]').forEach(b => b.onclick = () => {
+  filtro = b.dataset.filtro;
+  document.querySelectorAll('[data-filtro]').forEach(x => x.classList.toggle('active', x === b));
+  grade();
+});
+
+/* ---------------- produção ---------------- */
+async function producao() {
+  const d = await jget('/api/mes/producao?' + q());
+  const horas = d.por_hora, max = Math.max(1, ...horas.map(h => h.pecas));
+  const passo = Math.ceil(horas.length / 24);
+  $('graf-horas').innerHTML = horas.length ? horas.map((h, i) =>
+    `<div class="barra" title="${new Date(h.hora_ms).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})}: ${num(h.pecas)} peças">
+       <span class="barra-v">${h.pecas === max ? num(h.pecas) : ''}</span>
+       <i style="height:${h.pecas / max * 100}%"></i>
+       <span class="barra-x">${i % passo === 0 ? h.rotulo.slice(0, 2) + 'h' : ''}</span></div>`).join('')
+    : '<p class="hint">Sem produção no período.</p>';
+  $('tab-maquinas').innerHTML = d.por_maquina.map(m => `<tr><td><strong>${esc(m.nome)}</strong></td>
+    <td class="num">${num(m.pecas)}</td><td class="num">${m.ciclo_medio_s == null ? '—' : String(m.ciclo_medio_s).replace('.', ',') + ' s'}</td>
+    <td class="num">${num(m.leituras)}</td></tr>`).join('');
+}
+
+/* ---------------- paradas ---------------- */
+async function paradas() {
+  const d = await jget('/api/mes/paradas?' + q());
+  $('par-kpis').innerHTML = stat('Paradas', d.total) + stat('Tempo parado', dur(d.tempo_s)) +
+    stat('Com motivo apontado', d.pct_apontadas == null ? '—' : String(d.pct_apontadas).replace('.', ',') + '%') +
+    stat('Em setup', dur(d.por_classe.setup || 0)) + stat('Planejadas', dur(d.por_classe.planejada || 0));
+  $('pareto').innerHTML = d.pareto.map(m => `<div class="pareto-linha" title="${esc(m.nome)}: ${dur(m.tempo_s)} em ${m.ocorrencias} parada(s)">
+      <div class="pareto-topo"><span><strong>${esc(m.nome)}</strong> <span class="chip">${CLASSE[m.classe] || m.classe}</span></span>
+        <span class="hint">${m.ocorrencias}× · ${dur(m.tempo_s)} · ${String(m.pct).replace('.', ',')}%</span></div>
+      <div class="pareto-trilho"><i style="width:${Math.max(m.pct, 0.5)}%"></i></div></div>`).join('') || '<p class="hint">Nenhuma parada no período.</p>';
+  const semNome = d.pareto.filter(m => !m.cadastrado).length;
+  $('pareto-dica').innerHTML = semNome ? `${semNome} código(s) ainda sem nome — ${GESTOR ? '<a href="/config#paradas">preencher a legenda</a>' : 'peça ao gestor para preencher a legenda'}.` : '';
+  $('par-n').textContent = `(${d.eventos.length}${d.total > d.eventos.length ? ' de ' + d.total : ''})`;
+  const opcoes = d.motivos.map(m => `<option value="${esc(m.codigo)}">${esc(m.nome)}</option>`).join('');
+  $('tab-paradas').innerHTML = d.eventos.map(e => `<tr>
+    <td><strong>${esc(e.maquina)}</strong></td><td class="num">${hora(e.inicio_ms)}</td>
+    <td class="num">${e.em_andamento ? '<span class="chip chip-alerta">em andamento</span>' : hora(e.fim_ms)}</td>
+    <td class="num">${dur(e.duracao_s)}</td>
+    <td>${e.motivo.codigo && e.motivo_origem !== 'manual' ? esc(e.motivo.nome) :
+        `<select class="sel-motivo" data-id="${e.id}"><option value="">${e.motivo.codigo ? '' : 'apontar…'}</option>${opcoes}</select>`}</td>
+    <td>${esc(e.ordem || '')}</td><td>${esc(e.funcionario || '')}</td></tr>`).join('');
+  document.querySelectorAll('.sel-motivo').forEach(s => {
+    const ev = d.eventos.find(e => e.id == s.dataset.id);
+    if (ev.motivo.codigo) s.value = ev.motivo.codigo;
+    s.onchange = async () => { try { await post(`/api/mes/paradas/${s.dataset.id}/motivo`, {codigo: s.value}); paradas(); } catch (e) { alert(e.message); } };
+  });
+}
+
+/* ---------------- OEE ---------------- */
+async function oee() {
+  const d = await jget('/api/mes/oee?' + q()), g = d.geral;
+  $('oee-kpis').innerHTML = stat('OEE', pct(g.oee)) + stat('Disponibilidade', pct(g.disponibilidade)) +
+    stat('Performance', pct(g.performance)) + stat('Qualidade', pct(g.qualidade)) +
+    stat('Peças', num(g.pecas)) + stat('Máquinas com produção', g.maquinas_com_producao);
+  $('tab-oee').innerHTML = d.maquinas.map(m => `<tr><td><strong>${esc(m.nome)}</strong></td>
+    <td class="num"><strong>${pct(m.oee)}</strong></td><td class="num">${pct(m.disponibilidade)}</td>
+    <td class="num">${pct(m.performance)}${m.ciclo_estimado ? ' *' : ''}</td><td class="num">${pct(m.qualidade)}</td>
+    <td class="num">${num(m.pecas)}</td><td class="num">${dur(m.parado_s)}</td></tr>`).join('');
+}
+
+/* ---------------- ordens ---------------- */
+async function ordensAba() {
+  const d = await jget(`/api/mes/ordens?status=${statusOp}&busca=${encodeURIComponent($('busca-op').value)}`), c = d.contagem;
+  $('n-em_producao').textContent = c.em_producao; $('n-pausada').textContent = c.pausada;
+  $('n-fila').textContent = c.planejada + c.liberada; $('n-concluida').textContent = c.concluida + c.cancelada;
+  $('tab-ordens').innerHTML = d.ordens.map(o => `<tr>
+    <td><strong>${esc(o.numero)}</strong></td>
+    <td>${o.produto_codigo ? esc(o.produto_codigo) + ' — ' + esc(o.produto_descricao) : '<span class="chip chip-alerta">sem cadastro</span>'}</td>
+    <td>${esc(o.exec_maquinas || o.maquina_nome || '')}</td><td class="num">${num(o.qtd_boas)}</td>
+    <td class="num">${o.quantidade ? num(o.quantidade) : '—'}</td>
+    <td>${o.pct == null ? '' : `<div class="prog" title="${o.pct}%"><i style="width:${o.pct}%"></i></div>`}</td>
+    <td>${esc(o.origem_rotulo)}</td>
+    <td>${GESTOR && o.cadastro_incompleto ? `<button class="btn-link" data-completar="${o.id}" data-num="${esc(o.numero)}">completar</button>` : ''}</td></tr>`).join('')
+    || '<tr><td colspan="8" class="hint" style="padding:var(--space-5); text-align:center;">Nenhuma ordem aqui.</td></tr>';
+  document.querySelectorAll('[data-completar]').forEach(b => b.onclick = () => {
+    $('form-op').reset(); $('dlg-erro').textContent = ''; $('dlg-num').textContent = b.dataset.num;
+    $('form-op').dataset.id = b.dataset.completar; $('dlg-op').showModal();
+  });
+}
+document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
+  statusOp = b.dataset.st;
+  document.querySelectorAll('[data-st]').forEach(x => x.classList.toggle('active', x === b));
+  ordensAba();
+});
+$('busca-op').oninput = window.app.debounced(ordensAba, 350);
+$('form-op').onsubmit = async ev => {
+  ev.preventDefault();
+  try {
+    await post(`/api/mes/ordens/${ev.target.dataset.id}/completar`, Object.fromEntries(new FormData(ev.target)));
+    $('dlg-op').close(); ordensAba();
+  } catch (e) { $('dlg-erro').textContent = e.message; }
+};
+
+/* ---------------- ciclo de atualização ---------------- */
+const ABAS = {geral, producao, paradas, oee, ordens: ordensAba};
+async function carregar() {
+  try { await ABAS[aba](); } catch (e) { $('mes-aviso').innerHTML = `<div class="card warnings">${esc(e.message)}</div>`; }
+}
+async function situacao() {
+  try {
+    const s = await jget('/api/mes/status');
+    let h = '';
+    if (!s.ativo) h = `<div class="card warnings">A coleta do MES está desligada. ${GESTOR ? '<a href="/config#coleta">Ativar em Configurações</a>.' : 'Peça ao gestor para ativar.'}</div>`;
+    else if (s.fase === 'historico') h = `<div class="card">Trazendo o histórico das máquinas… ${Math.round(s.progresso * 100)}%</div>`;
+    else if (s.fase === 'erro') h = `<div class="card warnings">Falha na última coleta: ${esc(s.ultimo_erro)}</div>`;
+    $('mes-aviso').innerHTML = h;
+  } catch {}
+}
+mostrar(aba); situacao();
+setInterval(() => { if (aba === 'geral') carregar(); situacao(); }, 30000);
+</script>
+{% endblock %}

@@ -4,11 +4,19 @@
 {% block content %}
 <div class="page-header">
   <h1>Configurações</h1>
-  <p>Plataforma ativa, tema e informações do app.</p>
+  <p>Plataforma, legenda dos cartões e coleta do MES.</p>
 </div>
 
+<div class="tabs" role="tablist">
+  <button class="tab active" data-aba="geral">Geral</button>
+  <button class="tab" data-aba="paradas">Códigos de parada</button>
+  <button class="tab" data-aba="funcionarios">Funcionários</button>
+  <button class="tab" data-aba="coleta">Coleta MES</button>
+</div>
+
+<section class="aba" id="aba-geral">
 <div class="card">
-  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Plataforma</h2>
+  <h2 class="card-titulo">Plataforma</h2>
   <p class="config-desc">Escolha qual backend será consultado. A seleção fica salva neste navegador.</p>
   <label>
     Plataforma ativa
@@ -22,7 +30,7 @@
 </div>
 
 <div class="card">
-  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Plataformas suportadas</h2>
+  <h2 class="card-titulo">Plataformas suportadas</h2>
   <ul class="config-list">
     <li><strong>Ubidots Industrial</strong> · API v2.0 com filtros de grupo, autenticação <code>X-Auth-Token</code></li>
     <li><strong>JKControl (NEXUS CORE)</strong> · REST <code>/api</code> com autenticação <code>Bearer ag_...</code>, variáveis embutidas em <code>GET /api/devices</code></li>
@@ -30,55 +38,224 @@
 </div>
 
 <div class="card">
-  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Provedores de IA</h2>
+  <h2 class="card-titulo">Provedores de IA</h2>
   <p class="config-desc">Para usar a página /ai, configure ao menos uma chave no <code>.env</code> e reinicie o servidor.</p>
   <ul class="config-list">
     {% set provider_ids = ai_providers | map(attribute='id') | list %}
-    <li>
-      <strong>Anthropic Claude</strong> ·
-      {% if 'anthropic' in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">não configurado</span>{% endif %}
-      · <code>ANTHROPIC_API_KEY</code> · <a href="https://console.anthropic.com" target="_blank">obter chave</a>
-    </li>
-    <li>
-      <strong>OpenAI GPT</strong> ·
-      {% if 'openai' in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">não configurado</span>{% endif %}
-      · <code>OPENAI_API_KEY</code> · <a href="https://platform.openai.com/api-keys" target="_blank">obter chave</a>
-    </li>
-    <li>
-      <strong>Google Gemini</strong> ·
-      {% if 'google' in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">não configurado</span>{% endif %}
-      · <code>GOOGLE_API_KEY</code> · <a href="https://aistudio.google.com/apikey" target="_blank">obter chave (free tier)</a>
-    </li>
-    <li>
-      <strong>Ollama (local)</strong> ·
-      {% if 'ollama' in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">não configurado</span>{% endif %}
-      · <code>OLLAMA_BASE_URL</code> · <a href="https://ollama.com" target="_blank">instalar Ollama</a>
-    </li>
+    {% for pid, nome, chave in [('anthropic', 'Anthropic Claude', 'ANTHROPIC_API_KEY'), ('openai', 'OpenAI GPT', 'OPENAI_API_KEY'),
+                                ('google', 'Google Gemini', 'GOOGLE_API_KEY'), ('ollama', 'Ollama (local)', 'OLLAMA_BASE_URL')] %}
+    <li><strong>{{ nome }}</strong> ·
+      {% if pid in provider_ids %}<span style="color: var(--success);">configurado ✓</span>{% else %}<span style="color: var(--text-subtle);">não configurado</span>{% endif %}
+      · <code>{{ chave }}</code></li>
+    {% endfor %}
   </ul>
 </div>
 
 <div class="card">
-  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Sobre</h2>
+  <h2 class="card-titulo">Sobre</h2>
   <ul class="config-list">
-    <li>Versão do app: 1.4.0</li>
-    <li>Servidor: <code>http://127.0.0.1:8000</code></li>
     <li>Configuração de credenciais: arquivo <code>.env</code> na raiz do projeto</li>
     <li>Transformações de unidade: <code>app/transforms.py</code></li>
-    <li>Fuso horário dos relatórios: America/Sao_Paulo</li>
+    <li>Fuso horário: America/Sao_Paulo</li>
   </ul>
 </div>
+</section>
+
+{% for tipo, aba, titulo, desc in [
+  ('motivo', 'paradas', 'Códigos de parada', 'O que significa cada código do cartão de máquina (maq_rfid). É a legenda da sua fábrica: preencha o nome do evento e o tipo.'),
+  ('funcionario', 'funcionarios', 'Funcionários', 'Nome de cada código do cartão do operador (fun_rfid). Prefira importar a lista do cadastro oficial.')] %}
+<section class="aba hidden" id="aba-{{ aba }}">
+  <div class="card">
+    <h2 class="card-titulo">{{ titulo }}</h2>
+    <p class="config-desc">{{ desc }}</p>
+    <form class="linha-form" data-form="{{ tipo }}" style="grid-template-columns: 110px 1fr {% if tipo == 'motivo' %}210px 70px {% endif %}auto;">
+      <label>Código<input name="codigo" required placeholder="ex.: 10"></label>
+      <label>{{ 'Evento' if tipo == 'motivo' else 'Nome' }}<input name="nome" required minlength="2" placeholder="{{ 'ex.: Troca de molde' if tipo == 'motivo' else 'ex.: Maria Souza' }}"></label>
+      {% if tipo == 'motivo' %}
+      <label>Tipo<select name="classe">
+        <option value="parada">Parada não planejada</option><option value="setup">Setup / troca de molde</option>
+        <option value="planejada">Parada planejada</option><option value="producao">Produção (liberação)</option>
+      </select></label>
+      <label>Cor<input name="cor" type="color" value="#ef4444" style="padding:2px;"></label>
+      {% endif %}
+      <button type="submit" class="btn-primary">Salvar</button>
+    </form>
+    <p class="status" data-msg="{{ tipo }}" style="margin-top:var(--space-2);"></p>
+  </div>
+
+  <div class="card" data-semnome="{{ tipo }}" hidden>
+    <h2 class="card-titulo">Publicados pelas máquinas e ainda sem nome</h2>
+    <p class="config-desc">Clique num código para preenchê-lo acima.</p>
+    <div data-lista-semnome="{{ tipo }}" style="display:flex; gap:var(--space-2); flex-wrap:wrap;"></div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-titulo">Cadastrados <span class="hint" data-n="{{ tipo }}"></span></h2>
+    <div class="table-wrap"><table class="moldes-table"><thead><tr>
+      <th>Código</th><th>{{ 'Evento' if tipo == 'motivo' else 'Nome' }}</th>{% if tipo == 'motivo' %}<th>Tipo</th>{% endif %}
+      <th class="num">Leituras (90 dias)</th><th></th>
+    </tr></thead><tbody data-tab="{{ tipo }}"></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-titulo">Importar lista</h2>
+    <p class="config-desc">Cole uma linha por código, no formato <code>código;nome</code>{% if tipo == 'motivo' %} (opcional: <code>;tipo</code> — parada, setup, planejada ou producao){% endif %}. Pode copiar direto de uma planilha.</p>
+    <textarea rows="5" data-imp="{{ tipo }}" placeholder="{{ '10;Troca de molde;setup' if tipo == 'motivo' else '38;Maria Souza' }}"></textarea>
+    <div class="actions"><button type="button" class="btn-secondary" data-importar="{{ tipo }}">Importar</button>
+      <span class="status" data-imp-msg="{{ tipo }}"></span></div>
+  </div>
+</section>
+{% endfor %}
+
+<section class="aba hidden" id="aba-coleta">
+  <div class="card">
+    <h2 class="card-titulo">Coleta do MES</h2>
+    <p class="config-desc">Quando ligada, o app busca os dados das máquinas na plataforma a cada minuto e os grava aqui, para os painéis da <a href="/mes">Fábrica</a>.</p>
+    <div class="stats-grid" id="col-kpis"></div>
+    <div class="actions">
+      <button type="button" class="btn-primary" id="btn-ativar">Ativar coleta</button>
+      <button type="button" class="btn-secondary" id="btn-desativar">Pausar coleta</button>
+      <button type="button" class="btn-secondary" id="btn-verificar">Verificar a conta</button>
+      <span class="status" id="col-msg"></span>
+    </div>
+    <div id="col-conta" style="margin-top:var(--space-4);"></div>
+  </div>
+  <div class="card">
+    <h2 class="card-titulo">Variáveis lidas das máquinas</h2>
+    <p class="config-desc">Nome de cada variável na plataforma. Deixe em branco para não coletar.</p>
+    <form id="form-vars" class="grid"></form>
+    <div class="actions"><button type="button" class="btn-primary" id="btn-vars">Salvar variáveis</button>
+      <span class="status" id="vars-msg"></span></div>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  const { currentPlatform, setPlatform } = window.app;
-  const $sel = document.getElementById('platform-select');
-  const $msg = document.getElementById('save-msg');
+  const { currentPlatform, setPlatform, jget } = window.app;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const $sel = $('platform-select'), $msg = $('save-msg');
   $sel.value = currentPlatform();
   $sel.addEventListener('change', () => {
     setPlatform($sel.value);
     $msg.textContent = `Salvo: ${$sel.options[$sel.selectedIndex].text}`;
     setTimeout(() => $msg.textContent = '', 2500);
   });
+
+  async function envia(url, corpo, metodo = 'POST') {
+    const r = await fetch(url, {method: metodo, headers: {'Content-Type': 'application/json'}, body: corpo ? JSON.stringify(corpo) : undefined});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    return d;
+  }
+
+  /* ---------- abas ---------- */
+  const ABA_TIPO = {paradas: 'motivo', funcionarios: 'funcionario'};
+  function mostrar(nome) {
+    if (!$('aba-' + nome)) nome = 'geral';
+    history.replaceState(null, '', '#' + nome);
+    document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.aba === nome));
+    document.querySelectorAll('.aba').forEach(s => s.classList.toggle('hidden', s.id !== 'aba-' + nome));
+    if (ABA_TIPO[nome]) legenda(ABA_TIPO[nome]);
+    if (nome === 'coleta') coleta();
+  }
+  document.querySelectorAll('.tabs .tab').forEach(b => b.onclick = () => mostrar(b.dataset.aba));
+
+  /* ---------- legenda dos cartões ---------- */
+  const sel = (attr, tipo) => document.querySelector(`[data-${attr}="${tipo}"]`);
+  const COR_CLASSE = {parada: '#ef4444', setup: '#f59e0b', planejada: '#a855f7', producao: '#10b981'};
+  let cadastrados = {};
+  async function legenda(tipo) {
+    const d = await jget('/api/mes/legenda?tipo=' + tipo);
+    cadastrados[tipo] = d.cadastrados;
+    sel('n', tipo).textContent = `(${d.cadastrados.length})`;
+    sel('tab', tipo).innerHTML = d.cadastrados.map((c, i) => `<tr>
+      <td><code>${esc(c.codigo)}</code></td>
+      <td>${tipo === 'motivo' ? `<span class="cor-ponto" style="background:${esc(c.cor)}"></span>` : ''}<strong>${esc(c.nome)}</strong></td>
+      ${tipo === 'motivo' ? `<td><span class="chip">${esc(d.classes[c.classe] || c.classe)}</span></td>` : ''}
+      <td class="num">${c.vezes.toLocaleString('pt-BR')}</td>
+      <td style="text-align:right; white-space:nowrap;">
+        <button class="btn-link" data-editar="${i}">editar</button>
+        <button class="btn-link" data-excluir="${c.id}" data-nome="${esc(c.nome)}">excluir</button></td></tr>`).join('')
+      || `<tr><td colspan="5" class="hint" style="padding:var(--space-5); text-align:center;">Nenhum código cadastrado ainda.</td></tr>`;
+    const caixa = sel('semnome', tipo), form = sel('form', tipo);
+    caixa.hidden = !d.sem_nome.length;
+    sel('lista-semnome', tipo).innerHTML = d.sem_nome.map(v =>
+      `<button type="button" class="btn-secondary" data-usar="${esc(v.codigo)}">${esc(v.codigo)} <span class="hint">· ${v.vezes.toLocaleString('pt-BR')}×</span></button>`).join('');
+    caixa.querySelectorAll('[data-usar]').forEach(b => b.onclick = () => { form.codigo.value = b.dataset.usar; form.nome.focus(); });
+    sel('tab', tipo).querySelectorAll('[data-editar]').forEach(b => b.onclick = () => {
+      const c = cadastrados[tipo][b.dataset.editar];
+      form.codigo.value = c.codigo; form.nome.value = c.nome;
+      if (form.classe) { form.classe.value = c.classe; form.cor.value = c.cor; }
+      form.nome.focus();
+    });
+    sel('tab', tipo).querySelectorAll('[data-excluir]').forEach(b => b.onclick = async () => {
+      if (!confirm(`Excluir "${b.dataset.nome}"?`)) return;
+      await envia('/api/mes/legenda/' + b.dataset.excluir, null, 'DELETE'); legenda(tipo);
+    });
+  }
+  document.querySelectorAll('[data-form]').forEach(form => {
+    const tipo = form.dataset.form, msg = sel('msg', tipo);
+    if (form.classe) form.classe.onchange = () => form.cor.value = COR_CLASSE[form.classe.value];
+    form.onsubmit = async ev => {
+      ev.preventDefault();
+      try {
+        const r = await envia('/api/mes/legenda', {tipo, ...Object.fromEntries(new FormData(form))});
+        msg.textContent = 'Salvo.' + (r.paradas_corrigidas ? ` ${r.paradas_corrigidas} parada(s) do histórico atualizada(s).` : '');
+        form.reset(); if (form.cor) form.cor.value = COR_CLASSE.parada; legenda(tipo);
+      } catch (e) { msg.textContent = 'Erro: ' + e.message; }
+    };
+  });
+  document.querySelectorAll('[data-importar]').forEach(b => b.onclick = async () => {
+    const tipo = b.dataset.importar, msg = sel('imp-msg', tipo);
+    try {
+      const r = await envia('/api/mes/legenda/importar', {tipo, texto: sel('imp', tipo).value});
+      msg.textContent = `${r.importados} importado(s)` + (r.erros.length ? ` · ${r.erros.length} com erro: ${r.erros.slice(0, 3).join(' | ')}` : '');
+      if (r.importados) sel('imp', tipo).value = '';
+      legenda(tipo);
+    } catch (e) { msg.textContent = 'Erro: ' + e.message; }
+  });
+
+  /* ---------- coleta ---------- */
+  const FASE = {parado: 'Desligada', historico: 'Trazendo histórico', ao_vivo: 'Ao vivo', erro: 'Com erro'};
+  const quando = ms => ms ? new Date(ms).toLocaleString('pt-BR') : '—';
+  const stat = (l, v) => `<div class="stat"><span class="lbl">${l}</span><span class="val">${v}</span></div>`;
+  async function coleta() {
+    const d = await jget('/api/mes/config'), s = d.status;
+    $('col-kpis').innerHTML = stat('Situação', s.ativo ? (FASE[s.fase] || s.fase) + (s.fase === 'historico' ? ` ${Math.round(s.progresso * 100)}%` : '') : 'Desligada') +
+      stat('Última coleta', quando(s.ultimo_ok_ms)) + stat('Dados até', quando(s.cursor_ms)) +
+      stat('Peças (nesta sessão)', (s.acumulado.pecas || 0).toLocaleString('pt-BR'));
+    $('btn-ativar').hidden = s.ativo; $('btn-desativar').hidden = !s.ativo;
+    $('col-msg').textContent = s.ultimo_erro ? 'Último erro: ' + s.ultimo_erro : '';
+    $('form-vars').innerHTML = Object.entries(d.descricoes).map(([k, rot]) =>
+      `<label>${esc(rot)}<input name="${k}" value="${esc(d.config[k] || '')}"></label>`).join('');
+  }
+  $('btn-ativar').onclick = async () => {
+    $('col-msg').textContent = 'Consultando a plataforma…';
+    try {
+      const r = await envia('/api/mes/ativar', {});
+      $('col-msg').textContent = `Coleta ligada: ${r.total} dispositivo(s)` + (r.desativadas ? `, ${r.desativadas} sem ciclo ficaram de fora` : '') + '. O histórico leva alguns minutos.';
+      coleta();
+    } catch (e) { $('col-msg').textContent = 'Erro: ' + e.message; }
+  };
+  $('btn-desativar').onclick = async () => { await envia('/api/mes/desativar', {}); coleta(); };
+  $('btn-vars').onclick = async () => {
+    try { await envia('/api/mes/config', Object.fromEntries(new FormData($('form-vars')))); $('vars-msg').textContent = 'Salvo. Vale a partir da próxima coleta.'; }
+    catch (e) { $('vars-msg').textContent = 'Erro: ' + e.message; }
+  };
+  $('btn-verificar').onclick = async () => {
+    $('col-conta').innerHTML = '<p class="hint">Consultando…</p>';
+    try {
+      const c = await jget('/api/mes/conta');
+      const semCiclo = c.dispositivos.filter(d => !d.tem_ciclo).map(d => d.name);
+      $('col-conta').innerHTML = `<p><strong>${c.dispositivos.length}</strong> dispositivo(s) na conta` +
+        (semCiclo.length ? ` — sem variável de ciclo: ${esc(semCiclo.join(', '))}` : '') + `.</p>
+        <table class="moldes-table"><thead><tr><th>Dado</th><th>Variável</th><th class="num">Máquinas que publicam</th></tr></thead><tbody>` +
+        Object.values(c.papeis).filter(p => p.label).map(p => `<tr><td>${esc(p.descricao)}</td><td><code>${esc(p.label)}</code></td>
+          <td class="num">${p.existe ? p.maquinas : '<span class="chip chip-alerta">não existe na conta</span>'}</td></tr>`).join('') + '</tbody></table>';
+    } catch (e) { $('col-conta').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  };
+  mostrar(location.hash.slice(1) || 'geral');
 </script>
 {% endblock %}
