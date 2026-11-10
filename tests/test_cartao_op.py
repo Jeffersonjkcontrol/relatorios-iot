@@ -218,7 +218,9 @@ def test_codigo_do_cartao_vem_do_contexto():
 
 def test_cartoes_de_maquina_operador_e_qualidade(banco, maq):
     ingerir(
-        banco, maq, opcoes=Opcoes(codigos_liberacao=frozenset({"30"})),
+        banco, maq, opcoes=Opcoes(codigos_liberacao=frozenset({"30"}),
+                                  variaveis={"cod_fun": "cod_fun_rfid", "motivo": "maq_rfid",
+                                             "funcionario": "fun_rfid", "ciclo": "ciclo"}),
         funcionario=[C(t(6), 1, fun_rfid="0038")],
         cod_fun=[C(t(6, 1), 1, cod_fun_rfid="4512")],
         qualidade=[C(t(8, 5), 1, status="aprovado"), C(t(9), 0, status="reprovado")],
