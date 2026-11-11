@@ -12,9 +12,6 @@
     Variável:
     <select id="live-variable" style="height: 36px; width: 160px;">
       <option value="ciclo" selected>ciclo</option>
-      <option value="parada">parada</option>
-      <option value="producao">producao</option>
-      <option value="auto">auto</option>
     </select>
   </label>
   <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
@@ -114,6 +111,16 @@
   });
   $varSel.addEventListener('change', refresh);
 
-  refresh().then(scheduleNext);
+  // As variáveis vêm da conta ativa: cada firmware publica com seus próprios nomes
+  async function carregarVariaveis() {
+    try {
+      const lista = await jget(`/api/variables?platform=${encodeURIComponent(currentPlatform())}`);
+      const nomes = [...new Set(lista.map(v => v.label))].sort();
+      if (!nomes.length) return;
+      const atual = nomes.includes('ciclo') ? 'ciclo' : nomes[0];
+      $varSel.innerHTML = nomes.map(n => `<option value="${n}"${n === atual ? ' selected' : ''}>${n}</option>`).join('');
+    } catch {}
+  }
+  carregarVariaveis().then(refresh).then(scheduleNext);
 </script>
 {% endblock %}

@@ -37,9 +37,12 @@ async def _snapshot_for_device(
     try:
         points = await client.get_values(device_label, variable, now_ms - horizon_ms, now_ms, page_size=50)
     except Exception as e:
+        # 404 = esta máquina não publica a variável escolhida: não é falha
+        sem_variavel = "404" in str(e)
         return {
             "device": device_label, "name": device_name or device_label,
-            "variable": variable, "error": str(e)[:80],
+            "variable": variable,
+            "error": f"Não publica a variável '{variable}'" if sem_variavel else str(e)[:80],
             "status": "erro", "last_value": None, "last_ts": None,
             "mean_recent": None, "count_recent": 0,
         }
