@@ -27,6 +27,7 @@
   <button class="tab" data-aba="paradas">Paradas</button>
   <button class="tab" data-aba="oee">OEE</button>
   <button class="tab" data-aba="ordens">Ordens</button>
+  <button class="tab" data-aba="rastreabilidade">Rastreabilidade</button>
 </div>
 
 <section class="aba" id="aba-geral">
@@ -95,6 +96,23 @@
       <th>OP</th><th>Produto</th><th>Máquina</th><th class="num">Boas</th><th class="num">Planejado</th>
       <th style="min-width:140px;">Progresso</th><th>Origem</th><th></th>
     </tr></thead><tbody id="tab-ordens"></tbody></table></div>
+  </div>
+</section>
+
+<section class="aba hidden" id="aba-rastreabilidade">
+  <div class="card" style="display:flex; gap:var(--space-3); flex-wrap:wrap; align-items:end;">
+    <label style="flex:1; min-width:240px;">Lote, OP, produto ou cliente
+      <input type="text" id="r-busca" placeholder="ex.: 112729"></label>
+    <label style="flex:0 0 170px;">Dia<input type="date" id="r-dia"></label>
+    <button type="button" class="btn-primary" id="r-btn">Buscar</button>
+  </div>
+  <div id="r-detalhe"></div>
+  <div class="card">
+    <h2 class="card-titulo">Lotes <span class="hint" id="r-n"></span></h2>
+    <div class="table-wrap" style="max-height:520px;"><table class="moldes-table"><thead><tr>
+      <th>Lote</th><th>OP</th><th>Produto</th><th>Máquina</th><th>Dia</th><th>Turno</th>
+      <th class="num">Peças</th><th class="num">Refugo</th>
+    </tr></thead><tbody id="tab-lotes"></tbody></table></div>
   </div>
 </section>
 
@@ -281,8 +299,64 @@ $('form-op').onsubmit = async ev => {
   } catch (e) { $('dlg-erro').textContent = e.message; }
 };
 
+/* ---------------- rastreabilidade ---------------- */
+async function lotes() {
+  const d = await jget(`/api/mes/lotes?busca=${encodeURIComponent($('r-busca').value)}&dia=${$('r-dia').value}`);
+  $('r-n').textContent = `(${d.length})`;
+  $('tab-lotes').innerHTML = d.map(l => `<tr>
+    <td><a href="#" data-lote="${esc(l.codigo)}"><code>${esc(l.codigo)}</code></a></td>
+    <td>${esc(l.ordem_numero || 'sem OP')}</td><td>${esc(l.produto_descricao || l.produto_codigo || '')}</td>
+    <td>${esc(l.maquina_nome)}</td><td class="num">${l.dia.split('-').reverse().join('/')}</td><td>${esc(l.turno_nome)}</td>
+    <td class="num">${num(l.pecas)}</td><td class="num">${num(l.refugo)}</td></tr>`).join('')
+    || '<tr><td colspan="8" class="hint" style="padding:var(--space-5); text-align:center;">Nenhum lote encontrado.</td></tr>';
+  document.querySelectorAll('[data-lote]').forEach(a => a.onclick = ev => { ev.preventDefault(); abrirLote(a.dataset.lote); });
+  const pedido = new URLSearchParams(location.search).get('lote');
+  if (pedido && !$('r-detalhe').dataset.aberto) abrirLote(pedido);
+}
+async function abrirLote(codigo) {
+  let g;
+  try { g = await jget('/api/mes/lote?codigo=' + encodeURIComponent(codigo)); }
+  catch (e) { $('r-detalhe').innerHTML = `<div class="card warnings">${esc(e.message)}</div>`; return; }
+  const l = g.lote, c = g.ciclo;
+  const pessoas = g.operadores.map(p => `<li><strong>${esc(p.nome || 'Código ' + p.codigo)}</strong>
+    <span class="hint">${p.ja_estava ? 'já estava na máquina' : 'cartão às ' + hora(p.desde_ms)}</span></li>`).join('');
+  const quali = g.qualidade.map(q => `<li>${hora(q.ts_ms)} — <span class="chip ${q.codigo === 'aprovado' ? '' : 'chip-alerta'}">${esc(q.codigo)}</span></li>`).join('');
+  const pars = g.paradas.eventos.map(e => `<tr><td class="num">${hora(e.inicio_ms)}</td><td class="num">${dur(e.duracao_s)}</td><td>${esc(e.motivo.nome)}</td></tr>`).join('');
+  const mp = g.materia_prima.map(m => `<li><strong>${esc(m.mp_descricao)}</strong> — lote ${esc(m.lote_codigo)} <span class="hint">${esc(m.fornecedor || '')}</span></li>`).join('');
+  const vazio = t => `<p class="hint">${t}</p>`;
+  $('r-detalhe').dataset.aberto = '1';
+  $('r-detalhe').innerHTML = `<div class="card">
+    <div style="display:flex; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap; align-items:start;">
+      <div><h2 class="card-titulo" style="margin-bottom:2px;">Lote <code>${esc(l.codigo)}</code></h2>
+        <p class="hint">${hora(l.inicio_ms)} a ${hora(l.fim_ms)} · ${esc(l.turno_nome)} · ${esc(l.maquina_nome)}</p></div>
+      <a class="btn-secondary" style="text-decoration:none; padding:8px 14px; border-radius:var(--radius); border:1px solid var(--border-strong); color:var(--text);"
+         href="/mes/etiqueta.pdf?lote=${encodeURIComponent(l.codigo)}" target="_blank">Etiqueta (PDF)</a></div>
+    <div class="stats-grid" style="margin-top:var(--space-3);">
+      ${stat('Ordem de produção', esc(l.ordem_numero || 'sem OP'))}
+      ${stat('Produto', esc(l.produto_descricao || l.produto_codigo || 'não informado'))}
+      ${stat('Peças boas', num(l.boas))}${stat('Refugo', num(l.refugo))}
+      ${stat('Ciclo médio', c ? String(c.medio_s).replace('.', ',') + ' s' : '—')}
+      ${stat('Ciclo mín. / máx.', c ? `${String(c.min_s).replace('.', ',')} / ${String(c.max_s).replace('.', ',')} s` : '—')}
+      ${stat('Paradas', g.paradas.total + ' · ' + dur(g.paradas.tempo_s))}
+    </div>
+    <div class="grid" style="margin-top:var(--space-4); align-items:start;">
+      <div><h3 class="sub">Operadores</h3>${pessoas ? `<ul class="config-list">${pessoas}</ul>` : vazio('Nenhum cartão de operador no período.')}</div>
+      <div><h3 class="sub">Qualidade</h3>${quali ? `<ul class="config-list">${quali}</ul>` : vazio('Nenhum cartão da qualidade no período.')}</div>
+      <div><h3 class="sub">Matéria-prima</h3>${mp ? `<ul class="config-list">${mp}</ul>` : vazio('Nenhum lote de matéria-prima apontado.')}</div>
+    </div>
+    <h3 class="sub" style="margin-top:var(--space-4);">Paradas durante o lote</h3>
+    ${pars ? `<table class="moldes-table"><thead><tr><th>Início</th><th class="num">Duração</th><th>Motivo</th></tr></thead><tbody>${pars}</tbody></table>` : vazio('Sem paradas.')}
+    ${g.outros_lotes_da_op.length ? `<h3 class="sub" style="margin-top:var(--space-4);">Outros lotes da mesma OP</h3><p>` +
+      g.outros_lotes_da_op.map(o => `<a href="#" data-lote="${esc(o.codigo)}" class="chip" style="text-decoration:none;">${esc(o.codigo)} · ${num(o.pecas)}</a>`).join(' ') + '</p>' : ''}
+  </div>`;
+  $('r-detalhe').querySelectorAll('[data-lote]').forEach(a => a.onclick = ev => { ev.preventDefault(); abrirLote(a.dataset.lote); });
+  $('r-detalhe').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+$('r-btn').onclick = lotes;
+$('r-busca').onkeydown = ev => { if (ev.key === 'Enter') lotes(); };
+
 /* ---------------- ciclo de atualização ---------------- */
-const ABAS = {geral, producao, paradas, oee, ordens: ordensAba};
+const ABAS = {geral, producao, paradas, oee, ordens: ordensAba, rastreabilidade: lotes};
 async function carregar() {
   try { await ABAS[aba](); } catch (e) { $('mes-aviso').innerHTML = `<div class="card warnings">${esc(e.message)}</div>`; }
 }

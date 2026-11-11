@@ -9,11 +9,11 @@ import csv
 import io
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from app import cadastros as legenda
 from app.auth import User, require_gestor, require_user
-from app.mes import apontamentos, config, ingestao, ordens, producao
+from app.mes import apontamentos, config, ingestao, ordens, producao, rastreabilidade
 from app.mes.coletor import ativar_mes, coletor, desativar_mes, reconhecer_conta
 
 router = APIRouter()
@@ -35,6 +35,16 @@ def registrar_paginas(app, templates, tctx) -> None:
     @app.get("/mes", response_class=HTMLResponse)
     async def pagina_mes(request: Request):
         return templates.TemplateResponse("mes.html", tctx(request, current_page="mes"))
+
+    @app.get("/mes/etiqueta.pdf")
+    def etiqueta_do_lote(request: Request, lote: str):
+        # o QR leva direto à genealogia do lote neste mesmo servidor
+        url = str(request.base_url).rstrip("/") + "/mes?lote=" + lote + "#rastreabilidade"
+        pdf = rastreabilidade.etiqueta_pdf(lote, url)
+        if pdf is None:
+            raise HTTPException(status_code=404, detail="Lote não encontrado.")
+        return Response(content=pdf, media_type="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="lote-{lote}.pdf"'})
 
 
 # ---------------------------------------------------------------------- painel
@@ -88,6 +98,24 @@ def api_apontar_motivo(parada_id: int, dados: dict = Body(...), user: User = Dep
     except ValueError as e:
         raise _erro(e)
     return {"ok": True}
+
+
+# ------------------------------------------------------------- rastreabilidade
+@router.get("/api/mes/lotes")
+def api_lotes(busca: str = "", dia: str = "", maquina_id: int | None = None,
+              user: User = Depends(require_user)):
+    try:
+        return rastreabilidade.buscar(busca, dia, maquina_id)
+    except ValueError as e:
+        raise _erro(e)
+
+
+@router.get("/api/mes/lote")
+def api_lote(codigo: str, user: User = Depends(require_user)):
+    g = rastreabilidade.genealogia(codigo)
+    if not g:
+        raise HTTPException(status_code=404, detail="Lote não encontrado.")
+    return g
 
 
 # ---------------------------------------------------------------------- ordens
