@@ -26,6 +26,8 @@ Sistema web para consulta histórica, cálculo de OEE, análise de moldes e chat
 14. [Playbook de entrega para cliente novo](#14-playbook-de-entrega-para-cliente-novo)
 15. [Roadmap](#15-roadmap)
 
+> **MES** (página Fábrica, ordens, OEE, rastreabilidade, integração com ERP): ver [docs/MES.md](docs/MES.md).
+
 ---
 
 ## 1. Visão geral
@@ -1142,10 +1144,11 @@ Abrir issue em https://github.com/Jeffersonjkcontrol/relatorios-iot/issues ou co
 ✉️ jefferson.piccirillo@jkcontrol.com.br
 🌐 https://jkcontrol.com.br
 
-**Versão da documentação:** 1.7.0 — Novembro/2026
+**Versão da documentação:** 1.8.0 — Novembro/2026
 
 ### Changelog
 
+- **1.8.0** — Módulo **MES** (ordens de produção, OEE, paradas com legenda de cartões, rastreabilidade por lote, integração com ERP). Documentado em [docs/MES.md](docs/MES.md)
 - **1.7.0** — Migração Tailscale → **NetBird** (seção 7 reescrita): instalação com Setup Key, workaround do CDN lento via GitHub release, regra de firewall `wt0`, *lazy connections*, roteamento de sub-rede, revogação de chave. URLs atualizadas para porta 80 (`http://relatorios.local`) e IP fixo `192.168.0.251`
 - **1.6.0** — Hostname amigável `relatorios.local` (mDNS), playbook de entrega, troubleshooting expandido, compartilhamento Tailscale, Tailscale Funnel/Cloudflare Tunnel
 - **1.5.0** — Versão inicial com login multi-usuário, dashboard ao vivo, moldes, painel admin, Tailscale
