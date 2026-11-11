@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from app import cadastros as legenda
 from app.auth import User, require_gestor, require_user
-from app.mes import apontamentos, config, ingestao, ordens, producao, rastreabilidade
+from app.mes import apontamentos, config, eventos, ingestao, integracao, ordens, producao, rastreabilidade
 from app.mes.coletor import ativar_mes, coletor, desativar_mes, reconhecer_conta
 
 router = APIRouter()
@@ -238,6 +238,50 @@ def api_importar_legenda(dados: dict = Body(...), user: User = Depends(require_g
     if tipo == "motivo" and ok:
         ingestao.reassociar_tudo()
     return {"importados": ok, "erros": erros[:30]}
+
+
+# ------------------------------------------------------- integrações (gestor)
+@router.get("/api/mes/integracao")
+def api_integracao(user: User = Depends(require_gestor)):
+    return {"chaves": integracao.listar_chaves(), "webhooks": integracao.listar_webhooks(),
+            "eventos": eventos.EVENTOS, "historico": integracao.historico(30),
+            "colunas_csv": integracao.COLUNAS_CSV, "modelo_csv": integracao.modelo_csv()}
+
+
+@router.post("/api/mes/chaves")
+def api_criar_chave(dados: dict = Body(...), user: User = Depends(require_gestor)):
+    try:
+        return integracao.criar_chave(dados.get("nome", ""), dados.get("escopo", "rw"), user.username)
+    except ValueError as e:
+        raise _erro(e)
+
+
+@router.delete("/api/mes/chaves/{chave_id}")
+def api_revogar_chave(chave_id: int, user: User = Depends(require_gestor)):
+    integracao.revogar_chave(chave_id)
+    return {"ok": True}
+
+
+@router.post("/api/mes/webhooks")
+def api_criar_webhook(dados: dict = Body(...), user: User = Depends(require_gestor)):
+    try:
+        return integracao.salvar_webhook(dados.get("nome", ""), dados.get("url", ""), dados.get("eventos", "*"))
+    except ValueError as e:
+        raise _erro(e)
+
+
+@router.delete("/api/mes/webhooks/{webhook_id}")
+def api_excluir_webhook(webhook_id: int, user: User = Depends(require_gestor)):
+    integracao.excluir_webhook(webhook_id)
+    return {"ok": True}
+
+
+@router.post("/api/mes/ordens-csv")
+def api_importar_ordens(dados: dict = Body(...), user: User = Depends(require_gestor)):
+    try:
+        return integracao.importar_ordens_csv(dados.get("texto", ""), user.username)
+    except ValueError as e:
+        raise _erro(e)
 
 
 # ---------------------------------------------------------- coleta (gestor)

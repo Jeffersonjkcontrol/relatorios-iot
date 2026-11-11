@@ -12,6 +12,7 @@
   <button class="tab" data-aba="paradas">Códigos de parada</button>
   <button class="tab" data-aba="funcionarios">Funcionários</button>
   <button class="tab" data-aba="coleta">Coleta MES</button>
+  <button class="tab" data-aba="integracoes">Integrações</button>
 </div>
 
 <section class="aba" id="aba-geral">
@@ -128,6 +129,53 @@
       <span class="status" id="vars-msg"></span></div>
   </div>
 </section>
+<section class="aba hidden" id="aba-integracoes">
+  <div class="card">
+    <h2 class="card-titulo">Importar ordens de produção (CSV)</h2>
+    <p class="config-desc">Cole o conteúdo exportado do ERP, com cabeçalho. Obrigatórias: <code>numero</code>, <code>produto_codigo</code>, <code>quantidade</code>.
+      A OP que já apareceu no cartão da máquina é completada, sem perder a produção contada.</p>
+    <textarea rows="6" id="csv-ordens"></textarea>
+    <div class="actions">
+      <button type="button" class="btn-primary" id="btn-csv">Importar ordens</button>
+      <button type="button" class="btn-secondary" id="btn-modelo">Inserir modelo</button>
+      <span class="status" id="csv-msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-titulo">Chaves de API</h2>
+    <p class="config-desc">Para o ERP enviar ordens e ler a produção em <code>/api/v1</code>. Documentação interativa em <a href="/docs" target="_blank">/docs</a>.</p>
+    <form class="linha-form" id="form-chave" style="grid-template-columns: 1fr 220px auto;">
+      <label>Nome<input name="nome" required minlength="2" placeholder="ex.: ERP Protheus"></label>
+      <label>Permissão<select name="escopo"><option value="rw">Leitura e escrita</option><option value="ro">Só leitura</option></select></label>
+      <button type="submit" class="btn-primary">Gerar chave</button>
+    </form>
+    <div id="chave-nova"></div>
+    <table class="moldes-table" style="margin-top:var(--space-3);"><thead><tr>
+      <th>Nome</th><th>Chave</th><th>Permissão</th><th>Último uso</th><th></th></tr></thead><tbody id="tab-chaves"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-titulo">Webhooks</h2>
+    <p class="config-desc">O MES avisa um endereço seu quando algo acontece. Cada envio leva o cabeçalho <code>X-MES-Assinatura</code> (HMAC-SHA256 do corpo com o segredo).</p>
+    <form class="linha-form" id="form-wh" style="grid-template-columns: 180px 1fr 220px auto;">
+      <label>Nome<input name="nome" required minlength="2" placeholder="ex.: ERP"></label>
+      <label>URL<input name="url" required placeholder="https://erp.suaempresa.com.br/mes"></label>
+      <label>Eventos<select name="eventos" id="sel-eventos"></select></label>
+      <button type="submit" class="btn-primary">Adicionar</button>
+    </form>
+    <div id="wh-novo"></div>
+    <table class="moldes-table" style="margin-top:var(--space-3);"><thead><tr>
+      <th>Nome</th><th>URL</th><th>Eventos</th><th class="num">Entregues</th><th class="num">Pendentes</th><th class="num">Falhas</th><th></th>
+    </tr></thead><tbody id="tab-wh"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-titulo">Últimas integrações</h2>
+    <table class="moldes-table"><thead><tr><th>Quando</th><th>Canal</th><th>O quê</th><th>Resultado</th><th>Quem</th></tr></thead>
+      <tbody id="tab-hist"></tbody></table>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
@@ -159,6 +207,7 @@
     document.querySelectorAll('.aba').forEach(s => s.classList.toggle('hidden', s.id !== 'aba-' + nome));
     if (ABA_TIPO[nome]) legenda(ABA_TIPO[nome]);
     if (nome === 'coleta') coleta();
+    if (nome === 'integracoes') integracoes();
   }
   document.querySelectorAll('.tabs .tab').forEach(b => b.onclick = () => mostrar(b.dataset.aba));
 
@@ -255,6 +304,58 @@
         Object.values(c.papeis).filter(p => p.label).map(p => `<tr><td>${esc(p.descricao)}</td><td><code>${esc(p.label)}</code></td>
           <td class="num">${p.existe ? p.maquinas : '<span class="chip chip-alerta">não existe na conta</span>'}</td></tr>`).join('') + '</tbody></table>';
     } catch (e) { $('col-conta').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  };
+  /* ---------- integrações ---------- */
+  let modeloCsv = '';
+  async function integracoes() {
+    const d = await jget('/api/mes/integracao');
+    modeloCsv = d.modelo_csv;
+    $('tab-chaves').innerHTML = d.chaves.map(c => `<tr style="${c.ativo ? '' : 'opacity:.5'}">
+      <td><strong>${esc(c.nome)}</strong></td><td><code>${esc(c.prefixo)}…</code></td>
+      <td>${c.escopo === 'rw' ? 'Leitura e escrita' : 'Só leitura'}</td><td>${c.ativo ? quando(c.ultimo_uso_ms) : 'revogada'}</td>
+      <td style="text-align:right;">${c.ativo ? `<button class="btn-link" data-revogar="${c.id}" data-nome="${esc(c.nome)}">revogar</button>` : ''}</td></tr>`).join('')
+      || '<tr><td colspan="5" class="hint" style="padding:var(--space-4); text-align:center;">Nenhuma chave criada.</td></tr>';
+    $('tab-wh').innerHTML = d.webhooks.map(w => `<tr>
+      <td><strong>${esc(w.nome)}</strong></td><td><code>${esc(w.url)}</code>${w.ultimo_erro ? `<br><span class="hint">último erro: ${esc(w.ultimo_erro)}</span>` : ''}</td>
+      <td>${w.eventos === '*' ? 'todos' : esc(w.eventos)}</td><td class="num">${w.entregues}</td><td class="num">${w.pendentes}</td><td class="num">${w.falhas}</td>
+      <td style="text-align:right;"><button class="btn-link" data-wh="${w.id}" data-nome="${esc(w.nome)}">excluir</button></td></tr>`).join('')
+      || '<tr><td colspan="7" class="hint" style="padding:var(--space-4); text-align:center;">Nenhum webhook configurado.</td></tr>';
+    $('sel-eventos').innerHTML = '<option value="*">Todos os eventos</option>' +
+      Object.entries(d.eventos).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    $('tab-hist').innerHTML = d.historico.map(h => `<tr><td class="num">${quando(h.ts_ms)}</td><td>${esc(h.canal)}</td>
+      <td>${esc(h.recurso)}</td><td>${h.ok ? '' : '<span class="chip chip-alerta">com erro</span> '}${esc(h.resumo)}</td><td>${esc(h.autor)}</td></tr>`).join('')
+      || '<tr><td colspan="5" class="hint" style="padding:var(--space-4); text-align:center;">Nada ainda.</td></tr>';
+    document.querySelectorAll('[data-revogar]').forEach(b => b.onclick = async () => {
+      if (!confirm(`Revogar a chave "${b.dataset.nome}"? O sistema que a usa perde o acesso.`)) return;
+      await envia('/api/mes/chaves/' + b.dataset.revogar, null, 'DELETE'); integracoes();
+    });
+    document.querySelectorAll('[data-wh]').forEach(b => b.onclick = async () => {
+      if (!confirm(`Excluir o webhook "${b.dataset.nome}"?`)) return;
+      await envia('/api/mes/webhooks/' + b.dataset.wh, null, 'DELETE'); integracoes();
+    });
+  }
+  const segredoUmaVez = (rotulo, valor) => `<div class="card" style="background:var(--warning-soft); color:var(--warning-text); margin-top:var(--space-3);">
+    <strong>${rotulo}</strong> — copie agora, não será mostrado de novo:<br><code style="word-break:break-all;">${esc(valor)}</code></div>`;
+  $('form-chave').onsubmit = async ev => {
+    ev.preventDefault();
+    try { const r = await envia('/api/mes/chaves', Object.fromEntries(new FormData(ev.target)));
+          ev.target.reset(); await integracoes(); $('chave-nova').innerHTML = segredoUmaVez('Chave de API', r.chave); }
+    catch (e) { $('chave-nova').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  };
+  $('form-wh').onsubmit = async ev => {
+    ev.preventDefault();
+    try { const r = await envia('/api/mes/webhooks', Object.fromEntries(new FormData(ev.target)));
+          ev.target.reset(); await integracoes(); $('wh-novo').innerHTML = segredoUmaVez('Segredo do webhook', r.segredo); }
+    catch (e) { $('wh-novo').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  };
+  $('btn-modelo').onclick = () => { $('csv-ordens').value = modeloCsv; };
+  $('btn-csv').onclick = async () => {
+    try {
+      const r = await envia('/api/mes/ordens-csv', {texto: $('csv-ordens').value});
+      $('csv-msg').textContent = `${r.criadas} criada(s), ${r.atualizadas} atualizada(s)` + (r.erros.length ? ` · ${r.erros.length} com erro: ${r.erros.slice(0, 2).join(' | ')}` : '');
+      if (!r.erros.length) $('csv-ordens').value = '';
+      integracoes();
+    } catch (e) { $('csv-msg').textContent = 'Erro: ' + e.message; }
   };
   mostrar(location.hash.slice(1) || 'geral');
 </script>

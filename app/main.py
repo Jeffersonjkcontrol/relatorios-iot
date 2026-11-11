@@ -59,18 +59,27 @@ from app.mes import config as mes_config            # noqa: E402
 from app.mes.coletor import coletor as mes_coletor  # noqa: E402
 from app.mes.rotas import registrar_paginas as mes_registrar_paginas, router as mes_router  # noqa: E402
 
+from app.mes.api import router as mes_api_router     # noqa: E402
+from app.mes import integracao as mes_integracao     # noqa: E402
+
 app.include_router(mes_router)
+app.include_router(mes_api_router)                   # /api/v1: ERP, autenticado por chave de API
+_mes_tarefas: list = []
 
 
 @app.on_event("startup")
 async def _mes_iniciar():
+    import asyncio
     if mes_config.mes_ativo() and mes_config.coletor_permitido():
         mes_coletor.iniciar()
+    _mes_tarefas.append(asyncio.create_task(mes_integracao.laco_de_webhooks(), name="mes-webhooks"))
 
 
 @app.on_event("shutdown")
 async def _mes_parar():
     await mes_coletor.parar()
+    for tarefa in _mes_tarefas:
+        tarefa.cancel()
 
 
 def _client(platform_id: str) -> PlatformClient:
@@ -106,7 +115,8 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
     public_paths = {"/login", "/logout", "/change-password", "/maintenance"}
     is_static = path.startswith("/static/")
-    if path in public_paths or is_static:
+    # /api/v1 é para sistemas externos: não usa sessão, cada rota exige chave de API
+    if path in public_paths or is_static or path.startswith("/api/v1/"):
         return await call_next(request)
 
     user = current_user(request)
