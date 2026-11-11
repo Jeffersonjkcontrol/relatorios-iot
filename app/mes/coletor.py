@@ -32,8 +32,8 @@ from app.mes.ingestao import Opcoes, Ponto, Resumo
 log = logging.getLogger("mes.coletor")
 
 SOBREPOSICAO_MS = 10 * 60 * 1000
-FATIA_MS = 2 * 3600 * 1000
-LIMITE_POR_SERIE = 1000
+FATIA_MS = 6 * 3600 * 1000           # histórico em fatias de 6 h
+LIMITE_POR_SERIE = 2000
 IDS_POR_REQUISICAO = 150
 PAUSA_ENTRE_FATIAS_S = 0.3
 TTL_VARIAVEIS_S = 600
@@ -234,9 +234,11 @@ class Coletor:
         mapa = await self._mapa_variaveis(cliente, maquinas, variaveis)
         ids = list(mapa)
         bruto: dict[str, list] = {}
-        for i in range(0, len(ids), IDS_POR_REQUISICAO):
-            bruto.update(await self._lote_sem_truncar(
-                cliente, ids[i:i + IDS_POR_REQUISICAO], ini_ms, fim_ms, limite))
+        # os blocos de variáveis vão em paralelo: é o que mais encurta o histórico inicial
+        blocos = [ids[i:i + IDS_POR_REQUISICAO] for i in range(0, len(ids), IDS_POR_REQUISICAO)]
+        for parte in await asyncio.gather(*[
+                self._lote_sem_truncar(cliente, bloco, ini_ms, fim_ms, limite) for bloco in blocos]):
+            bruto.update(parte)
         out: dict[int, dict[str, list[Ponto]]] = {m["id"]: {} for m in maquinas}
         for vid, pontos in bruto.items():
             maquina_id, papel = mapa[vid]

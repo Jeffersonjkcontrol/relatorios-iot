@@ -17,7 +17,7 @@ PADROES: dict[str, str] = {
     "ativo": "0",                    # MES ligado? (o gestor ativa explicitamente)
     "plataforma": "ubidots",
     "intervalo_s": "60",             # período do coletor
-    "backfill_dias": "7",            # histórico trazido na ativação
+    "backfill_dias": "3",            # histórico trazido na ativação (cerca de 45 s por dia com 45 máquinas)
 
     # --- variáveis na plataforma IoT (papel -> label) ---
     "var_ciclo": "ciclo",            # tempo de ciclo; o contexto traz a OP (e/ou o molde)
@@ -60,6 +60,7 @@ ALTERNATIVAS: dict[str, list[str]] = {
 }
 
 DESCRICOES: dict[str, str] = {
+    "backfill_dias": "Dias de histórico trazidos ao ativar",
     "var_ciclo": "Tempo de ciclo",
     "var_contador": "Totalizador de peças",
     "var_parada": "Parada (0/1)",
