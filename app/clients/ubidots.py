@@ -98,6 +98,34 @@ class UbidotsClient:
             raise last_exc
         raise httpx.HTTPError("max_retries exceeded")
 
+    async def _post(self, url: str, body: dict[str, Any], max_retries: int = 3,
+                    timeout: float = 60.0) -> Any:
+        """POST com backoff em 429 e em falha de rede (mesma política do _get)."""
+        backoff = 1.0
+        last_exc: Exception | None = None
+        for attempt in range(max_retries):
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                try:
+                    r = await client.post(url, headers=self._headers(), json=body)
+                    if r.status_code == 429:
+                        retry_after = float(r.headers.get("Retry-After", backoff))
+                        await asyncio.sleep(min(retry_after, 10.0))
+                        backoff = min(backoff * 2, 8.0)
+                        continue
+                    r.raise_for_status()
+                    return r.json()
+                except httpx.HTTPStatusError:
+                    raise
+                except httpx.HTTPError as e:
+                    last_exc = e
+                    if attempt == max_retries - 1:
+                        raise
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 8.0)
+        if last_exc:
+            raise last_exc
+        raise httpx.HTTPError("429 persistente: limite de requisicoes da plataforma")
+
     async def _get_all(self, url: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Pagina via 'next' ate esgotar."""
         results: list[dict[str, Any]] = []
@@ -240,6 +268,53 @@ class UbidotsClient:
             for item in results
             if item.get("timestamp") is not None
         ]
+
+    # ----- consulta em lote (coletor do MES) -----
+    async def listar_variaveis_por_labels(self, labels: list[str]) -> list[dict[str, Any]]:
+        """Todas as variaveis da conta cujo label esta na lista: [{id, label, device}].
+        Sem cache de proposito: o coletor decide quando atualizar."""
+        params = {"label__in": ",".join(labels), "fields": "id,label,device", "page_size": 200}
+        return await self._get_all(f"{self.v2}/variables/", params)
+
+    async def get_series_bulk(
+        self,
+        var_ids: list[str],
+        start_ms: int,
+        end_ms: int,
+        limit: int = 1000,
+    ) -> dict[str, list[ValuePoint]]:
+        """Pontos de VARIAS variaveis numa unica requisicao (POST /data/raw/series).
+
+        `limit` vale por variavel e a plataforma devolve do mais novo para o mais
+        antigo - serie com exatamente `limit` pontos pode estar truncada no inicio.
+        Devolve {var_id: [pontos em ordem crescente]}.
+        """
+        out: dict[str, list[ValuePoint]] = {vid: [] for vid in var_ids}
+        if not var_ids:
+            return out
+        body = {
+            "variables": var_ids,
+            "columns": ["variable.id", "timestamp", "value.value", "value.context"],
+            "join_dataframes": False,
+            "start": int(start_ms),
+            "end": int(end_ms),
+            "limit": int(limit),
+        }
+        data = await self._post(f"{self.v1}/data/raw/series", body)
+        for serie in data.get("results", []) or []:
+            for linha in serie or []:
+                if not isinstance(linha, list) or len(linha) < 3 or linha[1] is None:
+                    continue
+                vid = linha[0]
+                if vid in out:
+                    out[vid].append(ValuePoint(
+                        timestamp_ms=int(linha[1]),
+                        value=linha[2],
+                        context=linha[3] if len(linha) > 3 and isinstance(linha[3], dict) else None,
+                    ))
+        for pontos in out.values():
+            pontos.sort(key=lambda p: p.timestamp_ms)
+        return out
 
 
 def date_to_ms(dt_iso: str) -> int:
