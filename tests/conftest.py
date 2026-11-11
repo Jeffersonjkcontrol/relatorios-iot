@@ -33,6 +33,10 @@ def banco(tmp_path):
     original = banco_geral.DB_PATH
     banco_geral.DB_PATH = tmp_path / "ai_history.db"
     legenda._init()
+    import app.admin.settings as ajustes
+    import app.auth.db as usuarios
+    usuarios._init()
+    ajustes._init()
     yield db
     banco_geral.DB_PATH = original
     db.usar_banco(Path(_TMP) / "mes.db")

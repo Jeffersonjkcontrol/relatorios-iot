@@ -197,7 +197,7 @@ def obter_produto_por_codigo(codigo: str) -> dict | None:
     return dict(row) if row else None
 
 
-def salvar_produto(dados: dict, produto_id: int | None = None, origem: str = "manual") -> int:
+def _salvar_produto_base(dados: dict, produto_id: int | None = None, origem: str = "manual") -> int:
     codigo = _texto(dados.get("codigo"), "Código", 1, 40)
     descricao = _texto(dados.get("descricao"), "Descrição", 2)
     unidade = _opcional(dados.get("unidade") or "PC", 6).upper() or "PC"
@@ -224,6 +224,18 @@ def salvar_produto(dados: dict, produto_id: int | None = None, origem: str = "ma
             return produto_id
     except sqlite3.IntegrityError:
         raise ValueError(f"Já existe um produto com o código '{codigo}'.")
+
+
+def salvar_produto(dados: dict, produto_id: int | None = None, origem: str = "manual") -> int:
+    """Cria/atualiza o produto. Ciclo padrão e cavidades são opcionais e servem
+    de padrão para as OPs desse produto (base da Performance no OEE)."""
+    ciclo = _decimal(dados.get("ciclo_padrao_s"), "Ciclo padrão (s)", 0.1)
+    cav = _inteiro(dados.get("cavidades"), "Cavidades", 1, 128, obrigatorio=False)
+    pid = _salvar_produto_base(dados, produto_id, origem)
+    if "ciclo_padrao_s" in dados or "cavidades" in dados:
+        with get_conn() as c:
+            c.execute("UPDATE produtos SET ciclo_padrao_s = ?, cavidades = ? WHERE id = ?", (ciclo, cav, pid))
+    return pid
 
 
 def garantir_produto(codigo: str, descricao: str = "", origem: str = "erp", cliente: str = "") -> int:

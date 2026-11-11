@@ -241,5 +241,5 @@ app/cadastros.py       legenda dos cartões RFID (fica em ai_history.db)
 - Eventos de cartão enfileirados pelo firmware sem rede chegam com o horário da
   reconexão, não o da batida.
 - Os ciclos brutos não são expurgados (cerca de 90 mil linhas/dia com 45 máquinas).
-- Sem telas ainda para: criar OP manualmente, apontar refugo e matéria-prima,
-  cadastro de produtos/moldes/turnos (as funções existem e são testadas).
+- Sem telas ainda para: matéria-prima e cadastro de moldes (as funções existem e
+  são testadas). OP, refugo, produtos e turnos têm tela.

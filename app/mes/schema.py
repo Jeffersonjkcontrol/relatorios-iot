@@ -364,4 +364,11 @@ INSERT INTO motivos_refugo (codigo, descricao) VALUES
     ('OUTRO',   'Outro');
 """
 
-MIGRATIONS: list[str] = [V1]
+# Ciclo padrão e cavidades no PRODUTO: a OP herda (o que estiver na OP ou no molde
+# continua valendo mais). Sem isso, toda OP precisaria repetir o ciclo.
+V2 = """
+ALTER TABLE produtos ADD COLUMN ciclo_padrao_s REAL;
+ALTER TABLE produtos ADD COLUMN cavidades INTEGER;
+"""
+
+MIGRATIONS: list[str] = [V1, V2]

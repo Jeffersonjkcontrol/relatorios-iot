@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from app import cadastros as legenda
 from app.auth import User, require_gestor, require_user
-from app.mes import apontamentos, config, eventos, ingestao, integracao, ordens, producao, rastreabilidade
+from app.mes import apontamentos, cadastros, config, eventos, ingestao, integracao, ordens, producao, rastreabilidade
 from app.mes.coletor import ativar_mes, coletor, desativar_mes, reconhecer_conta
 
 router = APIRouter()
@@ -140,17 +140,133 @@ def api_completar_ordem(ordem_id: int, dados: dict = Body(...), user: User = Dep
     return ordens.obter(ordem_id)
 
 
-@router.post("/api/mes/ordens/{ordem_id}/{acao}")
-def api_acao_ordem(ordem_id: int, acao: str, user: User = Depends(require_gestor)):
-    acoes = {"concluir": ordens.concluir, "cancelar": ordens.cancelar, "reabrir": ordens.reabrir,
-             "pausar": ordens.pausar}
-    if acao not in acoes:
-        raise HTTPException(status_code=404, detail="Ação desconhecida.")
+@router.get("/api/mes/base")
+def api_base(user: User = Depends(require_user)):
+    """Listas para os formulários: máquinas, produtos e motivos de refugo."""
+    return {"maquinas": [{"id": m["id"], "nome": m["nome"]} for m in cadastros.listar_maquinas(so_ativas=True)],
+            "produtos": cadastros.listar_produtos(so_ativos=True, limite=2000),
+            "motivos_refugo": cadastros.listar_motivos_refugo(so_ativos=True)}
+
+
+def _dados_da_op(dados: dict) -> dict:
+    campos = ("numero", "produto_codigo", "produto_descricao", "quantidade", "maquina_id", "ciclo_padrao_s",
+              "cavidades", "data_inicio_prev", "data_fim_prev", "cliente", "pedido", "observacao")
+    out = {k: dados[k] for k in campos if k in dados and str(dados[k]).strip() != ""}
+    # produto digitado que ainda não existe é cadastrado junto com a OP
+    codigo = str(out.get("produto_codigo") or "").strip()
+    if codigo and not cadastros.obter_produto_por_codigo(codigo):
+        cadastros.salvar_produto({"codigo": codigo, "descricao": out.get("produto_descricao") or codigo})
+    return out
+
+
+@router.post("/api/mes/ordens")
+def api_criar_ordem(dados: dict = Body(...), user: User = Depends(require_gestor)):
     try:
-        acoes[acao](ordem_id, user.username)
+        oid = ordens.criar(_dados_da_op(dados), user.username)
+        if dados.get("liberar"):
+            ordens.liberar(oid, user.username)
+    except ValueError as e:
+        raise _erro(e)
+    return ordens.obter(oid)
+
+
+@router.post("/api/mes/ordens/{ordem_id}/editar")
+def api_editar_ordem(ordem_id: int, dados: dict = Body(...), user: User = Depends(require_gestor)):
+    try:
+        ordens.atualizar(ordem_id, _dados_da_op(dados), user.username)
     except ValueError as e:
         raise _erro(e)
     return ordens.obter(ordem_id)
+
+
+@router.post("/api/mes/ordens/{ordem_id}/{acao}")
+def api_acao_ordem(ordem_id: int, acao: str, dados: dict = Body(default={}), user: User = Depends(require_user)):
+    """PCP (gestor) libera, cancela, reabre e exclui; o chão de fábrica (qualquer
+    usuário) inicia, pausa e conclui."""
+    so_gestor = {"liberar", "recolher", "cancelar", "reabrir", "excluir"}
+    if acao in so_gestor and user.role != "gestor":
+        raise HTTPException(status_code=403, detail="Permissão de gestor necessária.")
+    try:
+        if acao == "iniciar":
+            ordens.iniciar(ordem_id, user.username, maquina_id=int(dados["maquina_id"]) if dados.get("maquina_id") else None,
+                           substituir=dados.get("substituir") or None)
+        elif acao == "excluir":
+            ordens.excluir(ordem_id)
+            return {"ok": True}
+        elif acao in ("pausar", "concluir", "cancelar", "reabrir", "liberar", "recolher"):
+            getattr(ordens, acao)(ordem_id, user.username)
+        else:
+            raise HTTPException(status_code=404, detail="Ação desconhecida.")
+    except ValueError as e:
+        raise _erro(e)
+    return ordens.obter(ordem_id)
+
+
+# --------------------------------------------------------------------- refugo
+@router.get("/api/mes/refugos")
+def api_refugos(ordem_id: int, user: User = Depends(require_user)):
+    return apontamentos.listar_refugos(ordem_id=ordem_id, limite=100)
+
+
+@router.post("/api/mes/refugos")
+def api_apontar_refugo(dados: dict = Body(...), user: User = Depends(require_user)):
+    try:
+        rid = apontamentos.apontar_refugo(dados, user.username)
+    except ValueError as e:
+        raise _erro(e)
+    return {"id": rid}
+
+
+@router.delete("/api/mes/refugos/{refugo_id}")
+def api_excluir_refugo(refugo_id: int, user: User = Depends(require_gestor)):
+    try:
+        apontamentos.excluir_refugo(refugo_id)
+    except ValueError as e:
+        raise _erro(e)
+    return {"ok": True}
+
+
+# ------------------------------------------------ cadastros: turnos e produtos
+@router.get("/api/mes/turnos")
+def api_turnos(user: User = Depends(require_gestor)):
+    return cadastros.listar_turnos()
+
+
+@router.post("/api/mes/turnos")
+def api_salvar_turno(dados: dict = Body(...), user: User = Depends(require_gestor)):
+    try:
+        return {"id": cadastros.salvar_turno(dados, int(dados["id"]) if dados.get("id") else None)}
+    except ValueError as e:
+        raise _erro(e)
+
+
+@router.delete("/api/mes/turnos/{turno_id}")
+def api_excluir_turno(turno_id: int, user: User = Depends(require_gestor)):
+    cadastros.excluir_turno(turno_id)
+    return {"ok": True}
+
+
+@router.get("/api/mes/produtos")
+def api_produtos(busca: str = "", user: User = Depends(require_gestor)):
+    return cadastros.listar_produtos(busca)
+
+
+@router.post("/api/mes/produtos")
+def api_salvar_produto(dados: dict = Body(...), user: User = Depends(require_gestor)):
+    try:
+        existente = cadastros.obter_produto_por_codigo(str(dados.get("codigo") or ""))
+        return {"id": cadastros.salvar_produto(dados, existente["id"] if existente else None)}
+    except ValueError as e:
+        raise _erro(e)
+
+
+@router.delete("/api/mes/produtos/{produto_id}")
+def api_excluir_produto(produto_id: int, user: User = Depends(require_gestor)):
+    try:
+        cadastros.excluir_produto(produto_id)
+    except ValueError as e:
+        raise _erro(e)
+    return {"ok": True}
 
 
 # --------------------------------------------------- legenda dos cartões RFID

@@ -259,10 +259,11 @@ def oee(ini_ms: int, fim_ms: int, maquina_id: int | None = None) -> dict:
         maquinas = c.execute(f"SELECT q.* FROM maquinas q WHERE q.ativo = 1{filtro} ORDER BY q.nome", args_m).fetchall()
         prod = c.execute("""
             SELECT k.maquina_id, k.ordem_id, SUM(k.pecas) AS pecas,
-                   COALESCE(o.cavidades, m.cavidades, q.cavidades_padrao, 1) AS cav,
-                   COALESCE(o.ciclo_padrao_s, m.ciclo_padrao_s) AS ciclo_s
+                   COALESCE(o.cavidades, m.cavidades, pr.cavidades, q.cavidades_padrao, 1) AS cav,
+                   COALESCE(o.ciclo_padrao_s, m.ciclo_padrao_s, pr.ciclo_padrao_s) AS ciclo_s
             FROM contagens k JOIN maquinas q ON q.id = k.maquina_id
             LEFT JOIN ordens o ON o.id = k.ordem_id
+            LEFT JOIN produtos pr ON pr.id = o.produto_id
             LEFT JOIN moldes m ON m.id = COALESCE(o.molde_id, k.molde_id)
             WHERE k.ref_ms >= ? AND k.ref_ms < ? AND k.pecas > 0 GROUP BY k.maquina_id, k.ordem_id""",
             (ini_ms, ate)).fetchall()

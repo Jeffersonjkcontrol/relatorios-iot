@@ -92,6 +92,9 @@ def _client(platform_id: str) -> PlatformClient:
     return make_client(platform_id, base_url, token)
 
 
+_VERSAO_ESTATICOS = int(max(f.stat().st_mtime for f in (BASE_DIR / "static").iterdir() if f.is_file()))
+
+
 def tctx(request: Request, **extra) -> dict:
     """Contexto-base para todas as templates: inclui current_user e platforms."""
     base = {
@@ -99,6 +102,7 @@ def tctx(request: Request, **extra) -> dict:
         "current_user": current_user(request),
         "platforms": PLATFORMS,
         "year": datetime.now().year,
+        "v": _VERSAO_ESTATICOS,     # muda a cada atualização: o navegador não reusa CSS/JS antigos
     }
     base.update(extra)
     return base

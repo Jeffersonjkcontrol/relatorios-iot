@@ -90,6 +90,7 @@
     <button class="tab" data-st="planejada,liberada">Na fila <b id="n-fila"></b></button>
     <button class="tab" data-st="concluida,cancelada">Encerradas <b id="n-concluida"></b></button>
     <input type="text" id="busca-op" placeholder="Buscar OP, produto, cliente" style="margin-left:auto; width:240px;">
+    {% if current_user and current_user.role == 'gestor' %}<button type="button" class="btn-primary" id="btn-nova-op">Nova OP</button>{% endif %}
   </div>
   <div class="card">
     <div class="table-wrap" style="max-height:620px;"><table class="moldes-table"><thead><tr>
@@ -118,19 +119,56 @@
 
 <dialog id="dlg-op" class="dlg">
   <form method="dialog" id="form-op">
-    <h2 class="card-titulo">Completar OP <span id="dlg-num"></span></h2>
-    <p class="hint">Esta OP foi vista no cartão da máquina. Informe os dados que o PCP tem dela.</p>
+    <h2 class="card-titulo" id="dlg-titulo">Nova OP</h2>
+    <p class="hint" id="dlg-dica"></p>
     <div class="grid">
-      <label>Código do produto<input name="produto_codigo" required></label>
-      <label>Descrição<input name="produto_descricao" required minlength="2"></label>
+      <label>Número<input name="numero" placeholder="automático se vazio"></label>
+      <label>Código do produto<input name="produto_codigo" required list="lista-produtos"></label>
+      <label>Descrição do produto<input name="produto_descricao" placeholder="só para produto novo"></label>
       <label>Quantidade planejada<input name="quantidade" type="number" min="1" required></label>
-      <label>Ciclo padrão (s)<input name="ciclo_padrao_s" type="number" step="0.1" min="0.1"></label>
+      <label>Máquina<select name="maquina_id"></select></label>
+      <label>Ciclo padrão (s)<input name="ciclo_padrao_s" type="number" step="0.1" min="0.1" placeholder="herda do produto"></label>
+      <label>Cavidades<input name="cavidades" type="number" min="1" max="128" placeholder="herda do produto"></label>
+      <label>Entrega prevista<input name="data_fim_prev" type="date"></label>
+      <label>Cliente<input name="cliente"></label>
+      <label>Pedido<input name="pedido"></label>
     </div>
+    <datalist id="lista-produtos"></datalist>
+    <label id="lbl-liberar" style="flex-direction:row; align-items:center; gap:8px; margin-top:var(--space-3);">
+      <input type="checkbox" name="liberar" checked style="height:auto;"> Liberar para o chão de fábrica</label>
     <p class="error" id="dlg-erro"></p>
     <div class="actions">
-      <button type="submit" class="btn-primary" value="ok">Salvar</button>
+      <button type="submit" class="btn-primary">Salvar</button>
       <button type="button" class="btn-secondary" onclick="this.closest('dialog').close()">Cancelar</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-ini" class="dlg">
+  <form method="dialog" id="form-ini">
+    <h2 class="card-titulo">Iniciar OP <span id="ini-num"></span></h2>
+    <label>Máquina<select name="maquina_id" required></select></label>
+    <label style="margin-top:var(--space-3);">Se a máquina já estiver com outra OP
+      <select name="substituir"><option value="">Não iniciar (avisar)</option>
+        <option value="pausar">Pausar a OP que está lá</option><option value="concluir">Concluir a OP que está lá</option></select></label>
+    <p class="error" id="ini-erro"></p>
+    <div class="actions"><button type="submit" class="btn-primary">Iniciar</button>
+      <button type="button" class="btn-secondary" onclick="this.closest('dialog').close()">Cancelar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-ref" class="dlg">
+  <form method="dialog" id="form-ref">
+    <h2 class="card-titulo">Refugo da OP <span id="ref-num"></span></h2>
+    <div class="grid">
+      <label>Quantidade<input name="quantidade" type="number" min="1" required></label>
+      <label>Motivo<select name="motivo_id" required></select></label>
+    </div>
+    <label style="margin-top:var(--space-3);">Observação<input name="observacao"></label>
+    <p class="error" id="ref-erro"></p>
+    <div class="actions"><button type="submit" class="btn-primary">Apontar</button>
+      <button type="button" class="btn-secondary" onclick="this.closest('dialog').close()">Fechar</button></div>
+    <div id="ref-lista" style="margin-top:var(--space-4);"></div>
   </form>
 </dialog>
 {% endblock %}
@@ -278,13 +316,82 @@ async function ordensAba() {
     <td class="num">${o.quantidade ? num(o.quantidade) : '—'}</td>
     <td>${o.pct == null ? '' : `<div class="prog" title="${o.pct}%"><i style="width:${o.pct}%"></i></div>`}</td>
     <td>${esc(o.origem_rotulo)}</td>
-    <td>${GESTOR && o.cadastro_incompleto ? `<button class="btn-link" data-completar="${o.id}" data-num="${esc(o.numero)}">completar</button>` : ''}</td></tr>`).join('')
+    <td style="white-space:nowrap; text-align:right;">${acoes(o)}</td></tr>`).join('')
     || '<tr><td colspan="8" class="hint" style="padding:var(--space-5); text-align:center;">Nenhuma ordem aqui.</td></tr>';
-  document.querySelectorAll('[data-completar]').forEach(b => b.onclick = () => {
-    $('form-op').reset(); $('dlg-erro').textContent = ''; $('dlg-num').textContent = b.dataset.num;
-    $('form-op').dataset.id = b.dataset.completar; $('dlg-op').showModal();
-  });
+  ordensNaTela = Object.fromEntries(d.ordens.map(o => [o.id, o]));
+  document.querySelectorAll('[data-acao]').forEach(b => b.onclick = () => acaoOp(b.dataset.acao, ordensNaTela[b.dataset.id]));
 }
+let ordensNaTela = {}, base = null;
+async function carregarBase() {
+  if (!base) base = await jget('/api/mes/base');
+  return base;
+}
+function acoes(o) {
+  const b = (acao, rotulo) => `<button class="btn-link" data-acao="${acao}" data-id="${o.id}">${rotulo}</button>`;
+  const st = o.status, a = [];
+  if (st === 'planejada' && GESTOR) a.push(b('liberar', 'liberar'));
+  if (['planejada', 'liberada', 'pausada'].includes(st)) a.push(b('iniciar', st === 'pausada' ? 'retomar' : 'iniciar'));
+  if (st === 'em_producao') a.push(b('pausar', 'pausar'));
+  if (['em_producao', 'pausada'].includes(st)) a.push(b('concluir', 'concluir'), b('refugo', 'refugo'));
+  if (GESTOR && !['concluida', 'cancelada'].includes(st)) a.push(b('editar', o.cadastro_incompleto ? 'completar' : 'editar'));
+  if (GESTOR && ['planejada', 'liberada'].includes(st)) a.push(b('cancelar', 'cancelar'));
+  if (GESTOR && ['concluida', 'cancelada'].includes(st)) a.push(b('reabrir', 'reabrir'));
+  return a.join(' ');
+}
+const opcoesMaquina = (sel, vazio) => (vazio ? '<option value="">— definir depois —</option>' : '') +
+  base.maquinas.map(m => `<option value="${m.id}"${m.id == sel ? ' selected' : ''}>${esc(m.nome)}</option>`).join('');
+async function abrirOp(o) {
+  await carregarBase();
+  const f = $('form-op');
+  f.reset(); $('dlg-erro').textContent = ''; f.dataset.id = o ? o.id : '';
+  $('dlg-titulo').textContent = o ? (o.cadastro_incompleto ? 'Completar OP ' : 'Editar OP ') + o.numero : 'Nova OP';
+  $('dlg-dica').textContent = o && o.cadastro_incompleto ? 'Esta OP foi vista no cartão da máquina. Informe os dados que o PCP tem dela.' : '';
+  $('lista-produtos').innerHTML = base.produtos.map(p => `<option value="${esc(p.codigo)}">${esc(p.descricao)}</option>`).join('');
+  f.maquina_id.innerHTML = opcoesMaquina(o && o.maquina_id, true);
+  $('lbl-liberar').hidden = !!o; f.numero.disabled = !!o;
+  if (o) for (const k of ['numero', 'produto_codigo', 'ciclo_padrao_s', 'cavidades', 'data_fim_prev', 'cliente', 'pedido'])
+    f[k].value = o[k] ?? '';
+  if (o && o.quantidade) f.quantidade.value = o.quantidade;
+  $('dlg-op').showModal();
+}
+async function acaoOp(acao, o) {
+  if (acao === 'editar') return abrirOp(o);
+  if (acao === 'iniciar') {
+    await carregarBase();
+    $('form-ini').reset(); $('ini-erro').textContent = ''; $('ini-num').textContent = o.numero;
+    $('form-ini').dataset.id = o.id; $('form-ini').maquina_id.innerHTML = opcoesMaquina(o.maquina_id, false);
+    return $('dlg-ini').showModal();
+  }
+  if (acao === 'refugo') {
+    await carregarBase();
+    $('form-ref').reset(); $('ref-erro').textContent = ''; $('ref-num').textContent = o.numero; $('form-ref').dataset.id = o.id;
+    $('form-ref').motivo_id.innerHTML = base.motivos_refugo.map(m => `<option value="${m.id}">${esc(m.descricao)}</option>`).join('');
+    listarRefugos(o.id);
+    return $('dlg-ref').showModal();
+  }
+  const pergunta = {concluir: 'Concluir', cancelar: 'Cancelar', pausar: 'Pausar'}[acao];
+  if (pergunta && !confirm(`${pergunta} a OP ${o.numero}?`)) return;
+  try { await post(`/api/mes/ordens/${o.id}/${acao}`); ordensAba(); } catch (e) { alert(e.message); }
+}
+async function listarRefugos(ordemId) {
+  const lista = await jget('/api/mes/refugos?ordem_id=' + ordemId);
+  $('ref-lista').innerHTML = lista.length ? '<table class="moldes-table"><thead><tr><th>Quando</th><th class="num">Qtd</th><th>Motivo</th><th>Quem</th></tr></thead><tbody>' +
+    lista.map(r => `<tr><td class="num">${hora(r.ts_ms)}</td><td class="num">${num(r.quantidade)}</td><td>${esc(r.motivo_descricao || '')}</td><td>${esc(r.usuario)}</td></tr>`).join('') +
+    '</tbody></table>' : '<p class="hint">Nenhum refugo apontado nesta OP.</p>';
+}
+if ($('btn-nova-op')) $('btn-nova-op').onclick = () => abrirOp(null);
+$('form-ini').onsubmit = async ev => {
+  ev.preventDefault();
+  try { await post(`/api/mes/ordens/${ev.target.dataset.id}/iniciar`, Object.fromEntries(new FormData(ev.target))); $('dlg-ini').close(); ordensAba(); }
+  catch (e) { $('ini-erro').textContent = e.message; }
+};
+$('form-ref').onsubmit = async ev => {
+  ev.preventDefault();
+  try {
+    await post('/api/mes/refugos', {ordem_id: ev.target.dataset.id, ...Object.fromEntries(new FormData(ev.target))});
+    ev.target.quantidade.value = ''; ev.target.observacao.value = ''; listarRefugos(ev.target.dataset.id); ordensAba();
+  } catch (e) { $('ref-erro').textContent = e.message; }
+};
 document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
   statusOp = b.dataset.st;
   document.querySelectorAll('[data-st]').forEach(x => x.classList.toggle('active', x === b));
@@ -293,9 +400,11 @@ document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
 $('busca-op').oninput = window.app.debounced(ordensAba, 350);
 $('form-op').onsubmit = async ev => {
   ev.preventDefault();
+  const dados = Object.fromEntries(new FormData(ev.target)), id = ev.target.dataset.id;
+  dados.liberar = !id && ev.target.liberar.checked;
   try {
-    await post(`/api/mes/ordens/${ev.target.dataset.id}/completar`, Object.fromEntries(new FormData(ev.target)));
-    $('dlg-op').close(); ordensAba();
+    await post(id ? `/api/mes/ordens/${id}/editar` : '/api/mes/ordens', dados);
+    base = null; $('dlg-op').close(); ordensAba();
   } catch (e) { $('dlg-erro').textContent = e.message; }
 };
 

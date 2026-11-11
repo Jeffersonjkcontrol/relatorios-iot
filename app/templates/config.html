@@ -11,6 +11,8 @@
   <button class="tab active" data-aba="geral">Geral</button>
   <button class="tab" data-aba="paradas">Códigos de parada</button>
   <button class="tab" data-aba="funcionarios">Funcionários</button>
+  <button class="tab" data-aba="produtos">Produtos</button>
+  <button class="tab" data-aba="turnos">Turnos</button>
   <button class="tab" data-aba="coleta">Coleta MES</button>
   <button class="tab" data-aba="integracoes">Integrações</button>
 </div>
@@ -107,6 +109,43 @@
   </div>
 </section>
 {% endfor %}
+
+<section class="aba hidden" id="aba-produtos">
+  <div class="card">
+    <h2 class="card-titulo">Produtos</h2>
+    <p class="config-desc">O ciclo padrão e as cavidades valem para as OPs do produto — é a referência da Performance no OEE. Salvar com um código existente atualiza o produto.</p>
+    <form class="linha-form" id="form-prod" style="grid-template-columns: 140px 1fr 130px 110px auto;">
+      <label>Código<input name="codigo" required></label>
+      <label>Descrição<input name="descricao" required minlength="2"></label>
+      <label>Ciclo padrão (s)<input name="ciclo_padrao_s" type="number" step="0.1" min="0.1"></label>
+      <label>Cavidades<input name="cavidades" type="number" min="1" max="128"></label>
+      <button type="submit" class="btn-primary">Salvar</button>
+    </form>
+    <p class="status" id="prod-msg" style="margin-top:var(--space-2);"></p>
+    <div class="table-wrap" style="margin-top:var(--space-3);"><table class="moldes-table"><thead><tr>
+      <th>Código</th><th>Descrição</th><th class="num">Ciclo padrão</th><th class="num">Cavidades</th><th></th>
+    </tr></thead><tbody id="tab-prod"></tbody></table></div>
+  </div>
+</section>
+
+<section class="aba hidden" id="aba-turnos">
+  <div class="card">
+    <h2 class="card-titulo">Turnos</h2>
+    <p class="config-desc">Definem o dia fabril (começa no primeiro turno) e separam os lotes. Um turno pode cruzar a meia-noite; turnos não podem se sobrepor.</p>
+    <form class="linha-form" id="form-turno" style="grid-template-columns: 90px 1fr 110px 110px auto;">
+      <input type="hidden" name="id">
+      <label>Sigla<input name="sigla" required maxlength="6" placeholder="T1"></label>
+      <label>Nome<input name="nome" required minlength="2" placeholder="1º turno"></label>
+      <label>Início<input name="inicio" type="time" required></label>
+      <label>Fim<input name="fim" type="time" required></label>
+      <button type="submit" class="btn-primary">Salvar</button>
+    </form>
+    <p class="status" id="turno-msg" style="margin-top:var(--space-2);"></p>
+    <table class="moldes-table" style="margin-top:var(--space-3);"><thead><tr>
+      <th>Sigla</th><th>Nome</th><th class="num">Início</th><th class="num">Fim</th><th></th></tr></thead><tbody id="tab-turno"></tbody></table>
+    <p class="hint">Mudar os turnos vale para a produção coletada daqui em diante; os lotes já gravados não mudam.</p>
+  </div>
+</section>
 
 <section class="aba hidden" id="aba-coleta">
   <div class="card">
@@ -208,6 +247,8 @@
     if (ABA_TIPO[nome]) legenda(ABA_TIPO[nome]);
     if (nome === 'coleta') coleta();
     if (nome === 'integracoes') integracoes();
+    if (nome === 'produtos') produtos();
+    if (nome === 'turnos') turnos();
   }
   document.querySelectorAll('.tabs .tab').forEach(b => b.onclick = () => mostrar(b.dataset.aba));
 
@@ -305,6 +346,52 @@
           <td class="num">${p.existe ? p.maquinas : '<span class="chip chip-alerta">não existe na conta</span>'}</td></tr>`).join('') + '</tbody></table>';
     } catch (e) { $('col-conta').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
   };
+  /* ---------- produtos e turnos ---------- */
+  let listaProd = [], listaTurno = [];
+  const br = v => v == null ? '—' : String(v).replace('.', ',');
+  async function produtos() {
+    listaProd = await jget('/api/mes/produtos');
+    $('tab-prod').innerHTML = listaProd.map((p, i) => `<tr><td><code>${esc(p.codigo)}</code></td><td><strong>${esc(p.descricao)}</strong></td>
+      <td class="num">${p.ciclo_padrao_s == null ? '—' : br(p.ciclo_padrao_s) + ' s'}</td><td class="num">${br(p.cavidades)}</td>
+      <td style="text-align:right; white-space:nowrap;"><button class="btn-link" data-ed-prod="${i}">editar</button>
+        <button class="btn-link" data-ex-prod="${p.id}" data-nome="${esc(p.descricao)}">excluir</button></td></tr>`).join('')
+      || '<tr><td colspan="5" class="hint" style="padding:var(--space-5); text-align:center;">Nenhum produto cadastrado.</td></tr>';
+    document.querySelectorAll('[data-ed-prod]').forEach(b => b.onclick = () => {
+      const p = listaProd[b.dataset.edProd], f = $('form-prod');
+      f.codigo.value = p.codigo; f.descricao.value = p.descricao; f.ciclo_padrao_s.value = p.ciclo_padrao_s ?? ''; f.cavidades.value = p.cavidades ?? '';
+      f.ciclo_padrao_s.focus();
+    });
+    document.querySelectorAll('[data-ex-prod]').forEach(b => b.onclick = async () => {
+      if (!confirm(`Excluir "${b.dataset.nome}"?`)) return;
+      try { await envia('/api/mes/produtos/' + b.dataset.exProd, null, 'DELETE'); produtos(); } catch (e) { $('prod-msg').textContent = 'Erro: ' + e.message; }
+    });
+  }
+  $('form-prod').onsubmit = async ev => {
+    ev.preventDefault();
+    try { await envia('/api/mes/produtos', Object.fromEntries(new FormData(ev.target))); ev.target.reset(); $('prod-msg').textContent = 'Salvo.'; produtos(); }
+    catch (e) { $('prod-msg').textContent = 'Erro: ' + e.message; }
+  };
+  async function turnos() {
+    listaTurno = await jget('/api/mes/turnos');
+    $('tab-turno').innerHTML = listaTurno.map((t, i) => `<tr><td><code>${esc(t.sigla)}</code></td><td><strong>${esc(t.nome)}</strong></td>
+      <td class="num">${esc(t.inicio)}</td><td class="num">${esc(t.fim)}</td>
+      <td style="text-align:right; white-space:nowrap;"><button class="btn-link" data-ed-turno="${i}">editar</button>
+        <button class="btn-link" data-ex-turno="${t.id}" data-nome="${esc(t.nome)}">excluir</button></td></tr>`).join('');
+    document.querySelectorAll('[data-ed-turno]').forEach(b => b.onclick = () => {
+      const t = listaTurno[b.dataset.edTurno], f = $('form-turno');
+      f.elements.id.value = t.id; f.sigla.value = t.sigla; f.nome.value = t.nome; f.inicio.value = t.inicio; f.fim.value = t.fim;
+    });
+    document.querySelectorAll('[data-ex-turno]').forEach(b => b.onclick = async () => {
+      if (!confirm(`Excluir o turno "${b.dataset.nome}"?`)) return;
+      await envia('/api/mes/turnos/' + b.dataset.exTurno, null, 'DELETE'); turnos();
+    });
+  }
+  $('form-turno').onsubmit = async ev => {
+    ev.preventDefault();
+    try { await envia('/api/mes/turnos', Object.fromEntries(new FormData(ev.target))); ev.target.reset(); ev.target.elements.id.value = ''; $('turno-msg').textContent = 'Salvo.'; turnos(); }
+    catch (e) { $('turno-msg').textContent = 'Erro: ' + e.message; }
+  };
+
   /* ---------- integrações ---------- */
   let modeloCsv = '';
   async function integracoes() {

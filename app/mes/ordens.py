@@ -39,6 +39,7 @@ TOLERANCIA_FUTURO_MS = 60_000
 _SQL = """
     SELECT o.*,
            p.codigo AS produto_codigo, p.descricao AS produto_descricao,
+           p.ciclo_padrao_s AS produto_ciclo_s, p.cavidades AS produto_cavidades,
            m.codigo AS molde_codigo, m.descricao AS molde_descricao,
            m.cavidades AS molde_cavidades, m.ciclo_padrao_s AS molde_ciclo_s,
            q.codigo AS maquina_codigo, q.nome AS maquina_nome,
@@ -73,8 +74,8 @@ def _enriquecer(row: sqlite3.Row) -> dict:
         o["pct"] = None
     o["status_rotulo"] = ROTULOS.get(o["status"], o["status"])
     o["origem_rotulo"] = ORIGENS.get(o["origem"], o["origem"])
-    o["cavidades_efetivas"] = o["cavidades"] or o["molde_cavidades"] or 1
-    o["ciclo_efetivo_s"] = o["ciclo_padrao_s"] or o["molde_ciclo_s"]
+    o["cavidades_efetivas"] = o["cavidades"] or o["molde_cavidades"] or o["produto_cavidades"] or 1
+    o["ciclo_efetivo_s"] = o["ciclo_padrao_s"] or o["molde_ciclo_s"] or o["produto_ciclo_s"]
     o["em_execucao"] = o["exec_abertas"] > 0
     o["cadastro_incompleto"] = o["produto_id"] is None or o["quantidade"] == 0
     return o

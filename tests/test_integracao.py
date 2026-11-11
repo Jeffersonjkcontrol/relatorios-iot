@@ -127,3 +127,53 @@ def test_webhook_e_entregue_assinado_e_tenta_de_novo(banco, maq, monkeypatch):
         c.execute("UPDATE webhook_entregas SET proxima_ms = 0 WHERE status = 'pendente'")
     assert asyncio.run(integracao.despachar_pendentes()) == 1
     assert integracao.listar_webhooks()[0]["pendentes"] == 0
+
+
+def test_telas_op_refugo_produtos_e_turnos(cliente, banco, maq):
+    """Rotas usadas pelas telas: criar/operar OP, refugo, cadastros."""
+    from app.auth import create_session_cookie, COOKIE_NAME
+    from app.auth.db import create_user, get_user_by_username
+    for nome, papel in (("gestor_t", "gestor"), ("oper_t", "operador")):
+        if not get_user_by_username(nome):
+            create_user(nome, "senha-de-teste", papel)
+    g = {COOKIE_NAME: create_session_cookie("gestor_t")}
+    o = {COOKIE_NAME: create_session_cookie("oper_t")}
+    post = lambda url, corpo=None, quem=g: cliente.post(url, json=corpo or {}, cookies=quem)
+
+    assert post("/api/mes/produtos", {"codigo": "TP-01", "descricao": "Tampa", "ciclo_padrao_s": "17,5", "cavidades": 2}).status_code == 200
+    assert post("/api/mes/produtos", {"codigo": "tp-01", "descricao": "Tampa 20L", "ciclo_padrao_s": 18, "cavidades": 2}).status_code == 200
+    (p,) = cliente.get("/api/mes/produtos", cookies=g).json()
+    assert (p["descricao"], p["ciclo_padrao_s"], p["cavidades"]) == ("Tampa 20L", 18.0, 2)
+    assert post("/api/mes/produtos", {"codigo": "X"}, o).status_code == 403
+
+    r = post("/api/mes/ordens", {"produto_codigo": "TP-01", "quantidade": 100, "maquina_id": maq["id"], "liberar": True})
+    op = r.json()
+    assert r.status_code == 200 and (op["status"], op["ciclo_efetivo_s"], op["cavidades_efetivas"]) == ("liberada", 18.0, 2)
+    nova = post("/api/mes/ordens", {"produto_codigo": "NOVO-9", "produto_descricao": "Produto novo", "quantidade": 5}).json()
+    assert nova["produto_descricao"] == "Produto novo" and nova["status"] == "planejada"
+    assert post("/api/mes/ordens", {"produto_codigo": "TP-01"}).status_code == 400
+    assert post("/api/mes/ordens", {"produto_codigo": "TP-01", "quantidade": 1}, o).status_code == 403
+
+    oid = op["id"]
+    assert post(f"/api/mes/ordens/{oid}/iniciar", quem=o).json()["status"] == "em_producao"   # operador inicia
+    assert post(f"/api/mes/ordens/{oid}/cancelar", quem=o).status_code == 403                 # mas não cancela
+    assert post(f"/api/mes/ordens/{nova['id']}/iniciar", {"maquina_id": maq["id"]}).status_code == 400   # máquina ocupada
+    assert post(f"/api/mes/ordens/{nova['id']}/iniciar", {"maquina_id": maq["id"], "substituir": "pausar"}).json()["status"] == "em_producao"
+    assert cliente.get("/api/mes/ordens?status=pausada", cookies=g).json()["ordens"][0]["id"] == oid
+    assert post(f"/api/mes/ordens/{oid}/editar", {"quantidade": 250, "cliente": "ACME"}).json()["quantidade"] == 250
+
+    motivo = cliente.get("/api/mes/base", cookies=o).json()["motivos_refugo"][0]["id"]
+    assert post("/api/mes/refugos", {"ordem_id": oid, "quantidade": 3, "motivo_id": motivo}, o).status_code == 200
+    assert post("/api/mes/refugos", {"ordem_id": oid, "quantidade": 0, "motivo_id": motivo}, o).status_code == 400
+    (ref,) = cliente.get(f"/api/mes/refugos?ordem_id={oid}", cookies=o).json()
+    assert (ref["quantidade"], ref["usuario"]) == (3, "oper_t")
+    assert ordens.obter(oid)["qtd_refugo"] == 3
+    assert post(f"/api/mes/ordens/{oid}/concluir", quem=o).json()["status"] == "concluida"
+    assert post(f"/api/mes/ordens/{oid}/reabrir").json()["status"] == "pausada"
+
+    turnos = cliente.get("/api/mes/turnos", cookies=g).json()
+    assert [x["sigla"] for x in turnos] == ["T1", "T2", "T3"]
+    assert post("/api/mes/turnos", {"sigla": "X", "nome": "Extra", "inicio": "13:00", "fim": "15:00"}).status_code == 400
+    t1 = turnos[0]
+    assert post("/api/mes/turnos", {"id": t1["id"], "sigla": "T1", "nome": "Manhã", "inicio": "06:00", "fim": "14:00"}).status_code == 200
+    assert cliente.get("/api/mes/turnos", cookies=g).json()[0]["nome"] == "Manhã"
