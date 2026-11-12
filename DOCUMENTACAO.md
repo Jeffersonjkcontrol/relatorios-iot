@@ -578,7 +578,7 @@ Efeito prático: o primeiro acesso pode demorar 1-2 segundos a mais. Normal.
 
 ### Opcional: acessar a rede inteira da fábrica
 
-Por padrão você alcança só o mini PC. Se quiser chegar em **outros equipamentos** da LAN da Injequaly (gateways, CLPs, outras máquinas) sem instalar agente em cada um:
+Por padrão você alcança só o mini PC. Se quiser chegar em **outros equipamentos** da LAN do cliente (gateways, CLPs, outras máquinas) sem instalar agente em cada um:
 
 Dashboard → **Networks** → **Add Network** → **Entire Subnet** → `192.168.0.0/24`, escolhendo o mini PC (`relatorios`) como *routing peer*.
 
@@ -613,7 +613,7 @@ sudo rm -f /etc/apt/sources.list.d/tailscale.list /usr/share/keyrings/tailscale-
 
 ### Alternativa: Cloudflare Tunnel (domínio próprio + HTTPS)
 
-Para URL personalizada e pública (ex.: `https://relatorios.injequaly.com.br`), sem o cliente precisar de VPN:
+Para URL personalizada e pública (ex.: `https://relatorios.suaempresa.com.br`), sem o cliente precisar de VPN:
 
 1. Cria conta gratuita em https://cloudflare.com
 2. Instala `cloudflared` no mini PC
@@ -1141,7 +1141,7 @@ Acesso remoto: http://relatorios.netbird.cloud
 SSH:           ssh jkcontrol@relatorios.netbird.cloud
 ```
 
-> Com vários clientes, o FQDN do NetBird vem do hostname da máquina. Se todos se chamarem `relatorios`, os nomes colidem — use hostnames distintos por cliente (ex.: `relatorios-injequaly`) e o FQDN vira `relatorios-injequaly.netbird.cloud`.
+> Com vários clientes, o FQDN do NetBird vem do hostname da máquina. Se todos se chamarem `relatorios`, os nomes colidem — use hostnames distintos por cliente (ex.: `relatorios-cliente1`) e o FQDN vira `relatorios-cliente1.netbird.cloud`.
 
 ### Checklist de validação (antes de sair)
 

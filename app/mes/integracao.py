@@ -138,7 +138,7 @@ def importar_ordens_csv(texto: str, autor: str = "") -> dict:
 
 def modelo_csv() -> str:
     return (";".join(COLUNAS_CSV) + "\n"
-            "112729;TP-01;Tampa 20L azul;5000;nitron_inj13;;17,2;1;10/11/2026;14/11/2026;ACME;4500012;;sim\n")
+            "112729;TP-01;Tampa 20L azul;5000;inj13;;17,2;1;10/11/2026;14/11/2026;ACME;4500012;;sim\n")
 
 
 # ------------------------------------------------- apontamentos para o ERP

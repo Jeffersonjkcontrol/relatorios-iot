@@ -79,7 +79,7 @@
   const ORDEM = {parada: 0, ociosa: 1, produzindo: 2, sem_dados: 3};
   let maquinas = [], pagina = 0, prefixo = '';
 
-  // "Nitron inj01", "Nitron inj02"... -> "inj01": de longe, o que importa é o número
+  // "Fábrica inj01", "Fábrica inj02"... -> "inj01": de longe, o que importa é o número
   function prefixoComum(nomes) {
     if (nomes.length < 2) return '';
     const palavras = nomes[0].split(' ');

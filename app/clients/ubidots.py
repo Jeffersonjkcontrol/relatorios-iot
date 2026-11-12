@@ -145,7 +145,7 @@ class UbidotsClient:
     # ----- v2.0 -----
     async def get_organization_display(self) -> dict[str, str] | None:
         """Retorna {label, name} da organização principal (1ª da lista).
-        Usado pra mostrar 'Injequaly' em vez de 'Ubidots Industrial' na UI."""
+        Usado pra mostrar o nome da empresa em vez de 'Ubidots Industrial' na UI."""
         ck = self._ckey("org")
         cached = await _cache_get(ck, TTL_ORGANIZATION)
         if cached is not None:

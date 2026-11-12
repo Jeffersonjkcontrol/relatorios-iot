@@ -607,7 +607,7 @@ _DISPLAY_TTL_S = 3600
 @app.get("/api/platform-display")
 async def api_platform_display(platform: str):
     """Devolve {label, name, fallback} para o badge da plataforma.
-    Para Ubidots: nome da organização (ex.: 'Injequaly').
+    Para Ubidots: nome da organização cadastrada na conta.
     Para JKControl: o label padrão configurado em PLATFORMS."""
     import time
     fallback_label = next((p["label"] for p in PLATFORMS if p["id"] == platform), platform)

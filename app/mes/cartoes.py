@@ -1,6 +1,6 @@
 """Cartões RFID das máquinas: o que gravar em cada bloco.
 
-O firmware das injetoras (InjetNitron V12.x, RFID.ino) lê um cartão MIFARE
+O firmware das injetoras (JKControl V12.x, RFID.ino) lê um cartão MIFARE
 Classic 1K assim:
 
     bloco 1          tipo do cartão       "op_rfid", "fun_rfid", "maq_rfid", "quali_rfid"

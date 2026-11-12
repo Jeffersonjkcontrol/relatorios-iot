@@ -3,8 +3,8 @@
 Módulo que transforma o que as injetoras publicam em produção rastreável: ordens
 de produção, peças por máquina e por turno, paradas com motivo, OEE e lotes.
 
-Referência de desenvolvimento: a conta Ubidots da **Nitron** (45 injetoras,
-firmware InjetNitron V12.x). Nada é fixo para ela — nomes de variáveis, turnos e
+Desenvolvido e validado com uma fábrica de 45 injetoras (firmware JKControl
+V12.x). Nada é fixo para ela — nomes de variáveis, turnos e
 a legenda dos cartões são configuráveis por empresa.
 
 ---
@@ -138,8 +138,8 @@ turno não tiver um código de "parada planejada", ela derruba a disponibilidade
 O lote é criado sozinho: **OP × máquina × dia fabril × turno**. Código:
 
 ```
-112729.261110.T1.NITRON_INJ13     OP · AAMMDD · turno · máquina
-SEMOP.261110.T1.NITRON_INJ13      produção sem OP apontada
+112729.261110.T1.INJ13     OP · AAMMDD · turno · máquina
+SEMOP.261110.T1.INJ13      produção sem OP apontada
 ```
 
 O dia fabril começa no primeiro turno (06:00 por padrão): a produção das 03:00
@@ -158,7 +158,7 @@ um QR code que abre essa página.
 
 Compara duas medidas independentes do mesmo dispositivo: as **peças do
 totalizador** e as **leituras de ciclo**. Cada leitura publicada vale N ciclos da
-máquina (2 no firmware da Nitron; ajustável em `ciclos_por_publicacao`) e cada
+máquina (2 no firmware JKControl V12.x; ajustável em `ciclos_por_publicacao`) e cada
 ciclo vale `cavidades` peças. Então:
 
 ```
@@ -188,7 +188,7 @@ Abre também pelo link **Abrir tela de TV** na página Fábrica.
 - `?ordem=situacao` — paradas primeiro, depois ociosas, depois produzindo
 
 Exige login: entre uma vez no navegador da TV com um usuário só de consulta
-(papel **operador**). O prefixo comum dos nomes ("Nitron inj01" → "inj01") é
+(papel **operador**). O prefixo comum dos nomes ("Fábrica inj01" → "inj01") é
 omitido para o número ficar legível de longe.
 
 ---
@@ -248,7 +248,7 @@ Configurações → Integrações. Cabeçalho obrigatório; separador `;`, `,` o
 
 ```
 numero;produto_codigo;produto_descricao;quantidade;maquina;ciclo_padrao_s;data_fim_prev;cliente;liberar
-112729;TP-01;Tampa 20L azul;5000;nitron_inj13;17,2;14/11/2026;ACME;sim
+112729;TP-01;Tampa 20L azul;5000;inj13;17,2;14/11/2026;ACME;sim
 ```
 
 Obrigatórias: `numero`, `produto_codigo`, `quantidade`. Aceita também `molde_codigo`,
@@ -324,7 +324,7 @@ app/cadastros.py       legenda dos cartões RFID (fica em ai_history.db)
 
 ### Limites conhecidos
 
-- Contagem com resolução do totalizador (15 min na Nitron): o painel de peças
+- Contagem com resolução do totalizador (15 min no firmware JKControl V12.x): o painel de peças
   atualiza nessa cadência; ciclo e status são de minuto em minuto.
 - Eventos de cartão enfileirados pelo firmware sem rede chegam com o horário da
   reconexão, não o da batida.

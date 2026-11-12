@@ -50,7 +50,7 @@ def get_maintenance_msg() -> str:
 
 def modulo_moldes() -> bool:
     """Página Moldes: só faz sentido quando o firmware envia o molde no contexto
-    dos ciclos (ex.: Injequaly). Desligada por padrão."""
+    dos ciclos. Desligada por padrão."""
     return _get("modulo_moldes", "0") == "1"
 
 

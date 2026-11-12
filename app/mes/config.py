@@ -4,7 +4,7 @@ Fica no banco (e não no .env) porque muda em operação — ativar a coleta, tr
 o nome de uma variável — sem reiniciar o container.
 
 Os nomes de variável são configuráveis porque cada firmware publica com seus
-próprios labels. Os padrões abaixo são os do firmware InjetNitron V12.x.
+próprios labels. Os padrões abaixo são os do firmware JKControl V12.x.
 """
 from __future__ import annotations
 
