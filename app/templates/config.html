@@ -11,6 +11,7 @@
   <button class="tab active" data-aba="geral">Geral</button>
   <button class="tab" data-aba="paradas">Códigos de parada</button>
   <button class="tab" data-aba="funcionarios">Funcionários</button>
+  <button class="tab" data-aba="cartoes">Cartões RFID</button>
   <button class="tab" data-aba="produtos">Produtos</button>
   <button class="tab" data-aba="turnos">Turnos</button>
   <button class="tab" data-aba="coleta">Coleta MES</button>
@@ -109,6 +110,57 @@
   </div>
 </section>
 {% endfor %}
+
+<section class="aba hidden" id="aba-cartoes">
+  <div class="card" id="rf-estado-card">
+    <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap;">
+      <span class="cor-ponto" id="rf-ponto" style="width:14px; height:14px;"></span>
+      <strong id="rf-estado">Procurando o leitor…</strong>
+      <span class="hint" id="rf-detalhe"></span>
+    </div>
+    <div id="rf-instalar" class="hint" style="margin-top:var(--space-3);" hidden>
+      O agente RFID não está aberto neste computador. Ele é o programa que liga esta página ao leitor ACR122U.
+      <ol style="margin:var(--space-2) 0 0; padding-left:var(--space-5);">
+        <li>Instale o driver do ACR122U (o mesmo de antes) e plugue o leitor no USB.</li>
+        <li><a id="rf-baixar" href="#" target="_blank">Baixe o AgenteRFID.exe</a> e abra-o — deixe a janela dele aberta.</li>
+        <li>Se o navegador perguntar se esta página pode acessar dispositivos da rede local, clique em <strong>Permitir</strong>.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-titulo">Gravar cartão</h2>
+    <form id="rf-form" style="display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:flex-end;">
+      <label style="width:190px;">Tipo<select name="tipo" id="rf-tipo"></select></label>
+      <label id="rf-lbl-cod" style="width:170px;">Código<input name="conteudo" id="rf-cod" list="rf-lista" autocomplete="off"></label>
+      <label id="rf-lbl-quali" style="width:170px;" hidden>Status<select id="rf-quali"><option value="aprovado">Aprovado</option><option value="reprovado">Reprovado</option></select></label>
+      <label id="rf-lbl-nome" style="flex:1; min-width:220px;">Nome<input name="nome" id="rf-nome" placeholder="cadastra na legenda se for novo"></label>
+      <button type="submit" class="btn-primary" id="rf-gravar">Gravar</button>
+      <button type="button" class="btn-secondary" id="rf-ler">Ler cartão</button>
+    </form>
+    <datalist id="rf-lista"></datalist>
+    <div id="rf-resultado" style="margin-top:var(--space-3);"></div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-titulo">Gravar em sequência</h2>
+    <p class="config-desc">Para fazer vários cartões de uma vez: marque os códigos e vá trocando o cartão no leitor — cada um é gravado quando um cartão novo é aproximado.</p>
+    <div style="display:flex; gap:var(--space-2); align-items:center; flex-wrap:wrap;">
+      <select id="rf-lote-tipo"><option value="funcionario">Funcionários</option><option value="parada">Códigos de parada</option></select>
+      <button type="button" class="btn-secondary" id="rf-lote-todos">Marcar todos</button>
+      <button type="button" class="btn-primary" id="rf-lote-iniciar">Iniciar sequência</button>
+      <button type="button" class="btn-secondary" id="rf-lote-parar" hidden>Parar</button>
+      <span class="status" id="rf-lote-msg"></span>
+    </div>
+    <div id="rf-lote-lista" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap:4px; margin-top:var(--space-3); max-height:260px; overflow:auto;"></div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-titulo">Cartões gravados</h2>
+    <table class="moldes-table"><thead><tr><th>Quando</th><th>Tipo</th><th>Conteúdo</th><th>Nome</th><th>Nº do cartão</th><th>Quem gravou</th></tr></thead>
+      <tbody id="rf-hist"></tbody></table>
+  </div>
+</section>
 
 <section class="aba hidden" id="aba-produtos">
   <div class="card">
@@ -248,6 +300,8 @@
     if (nome === 'coleta') coleta();
     if (nome === 'integracoes') integracoes();
     if (nome === 'produtos') produtos();
+    rfAtivo = nome === 'cartoes';
+    if (rfAtivo) cartoes();
     if (nome === 'turnos') turnos();
   }
   document.querySelectorAll('.tabs .tab').forEach(b => b.onclick = () => mostrar(b.dataset.aba));
@@ -346,6 +400,131 @@
           <td class="num">${p.existe ? p.maquinas : '<span class="chip chip-alerta">não existe na conta</span>'}</td></tr>`).join('') + '</tbody></table>';
     } catch (e) { $('col-conta').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
   };
+  /* ---------- cartões RFID ---------- */
+  const AGENTE = 'http://127.0.0.1:47321';
+  let rfAtivo = false, rfOpcoes = null, rfUltimoUid = null, rfLote = null;
+  async function agente(caminho, corpo, ms = 8000) {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+    try {
+      const r = await fetch(AGENTE + caminho, corpo ? {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(corpo), signal: ctl.signal} : {signal: ctl.signal});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro || 'Falha no agente RFID');
+      return d;
+    } catch (e) {
+      if (e.name === 'AbortError' || e instanceof TypeError) throw new Error('AGENTE_FORA');
+      throw e;
+    } finally { clearTimeout(t); }
+  }
+  async function rfEstado() {
+    let st = null;
+    try { st = await agente('/status', null, 2500); } catch (e) { st = null; }
+    const ponto = $('rf-ponto'), est = $('rf-estado'), det = $('rf-detalhe');
+    $('rf-instalar').hidden = !!st;
+    if (!st) { ponto.style.background = '#94a3b8'; est.textContent = 'Agente RFID não encontrado'; det.textContent = ''; return null; }
+    if (!st.leitor) { ponto.style.background = '#ef4444'; est.textContent = 'Leitor não conectado'; det.textContent = st.erro || 'Plugue o ACR122U no USB.'; return st; }
+    if (!st.cartao) { ponto.style.background = '#f59e0b'; est.textContent = 'Leitor pronto — aproxime um cartão'; det.textContent = st.leitor; return st; }
+    ponto.style.background = '#10b981'; est.textContent = 'Cartão no leitor'; det.textContent = 'nº ' + st.uid;
+    return st;
+  }
+  setInterval(() => { if (rfAtivo && !rfLote) rfEstado(); }, 2000);
+
+  async function cartoes() {
+    rfOpcoes = await jget('/api/mes/cartoes/opcoes');
+    $('rf-baixar').href = rfOpcoes.url_agente;
+    if (!$('rf-tipo').options.length)
+      $('rf-tipo').innerHTML = Object.entries(rfOpcoes.tipos).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    rfTipo(); rfLoteLista(); rfHistorico(); rfEstado();
+  }
+  function rfLista(tipo) { return tipo === 'op' ? rfOpcoes.ops : (rfOpcoes[tipo] || []); }
+  function rfTipo() {
+    const tipo = $('rf-tipo').value, quali = tipo === 'qualidade';
+    $('rf-lbl-cod').hidden = quali; $('rf-lbl-quali').hidden = !quali;
+    $('rf-lbl-nome').hidden = !['funcionario', 'parada'].includes(tipo);
+    $('rf-cod').placeholder = {op: 'nº da OP', funcionario: 'ex.: 38', parada: 'ex.: 10'}[tipo] || '';
+    $('rf-lista').innerHTML = rfLista(tipo).map(o => `<option value="${esc(o.codigo)}">${esc(o.nome)}</option>`).join('');
+    $('rf-cod').value = ''; $('rf-nome').value = '';
+  }
+  $('rf-tipo').onchange = rfTipo;
+  $('rf-cod').oninput = () => {
+    const achado = rfLista($('rf-tipo').value).find(o => o.codigo === $('rf-cod').value.trim().replace(/^0+(?=\d)/, ''));
+    if (achado && $('rf-tipo').value !== 'op') $('rf-nome').value = achado.nome;
+  };
+  const rfMsg = (html, erro) => { $('rf-resultado').innerHTML = `<div class="card" style="margin:0; ${erro ? 'background:var(--danger-soft); color:var(--danger-text);' : 'background:var(--success-soft); color:var(--success-text);'}">${html}</div>`; };
+  const rfErro = e => e.message === 'AGENTE_FORA' ? 'O agente RFID não respondeu. Confira se a janela dele está aberta neste computador.' : e.message;
+
+  async function rfGravarUm(tipo, conteudo, nome, confirmar) {
+    const prep = await envia('/api/mes/cartoes/preparar', {tipo, conteudo, nome});
+    if (confirmar && prep.avisos.length && !confirm(prep.avisos.join('\n') + '\n\nGravar mesmo assim?')) return null;
+    const r = await agente('/gravar', {blocos: prep.blocos});
+    const nomeFinal = nome || (rfLista(tipo).find(o => o.codigo === prep.conteudo) || {}).nome || '';
+    await envia('/api/mes/cartoes/historico', {tipo, conteudo: prep.conteudo, uid: r.uid, nome: nomeFinal});
+    rfUltimoUid = r.uid;
+    return {...prep, uid: r.uid, nome: nomeFinal};
+  }
+  $('rf-form').onsubmit = async ev => {
+    ev.preventDefault();
+    const tipo = $('rf-tipo').value, conteudo = tipo === 'qualidade' ? $('rf-quali').value : $('rf-cod').value;
+    $('rf-gravar').disabled = true; $('rf-resultado').innerHTML = '<p class="hint">Gravando — mantenha o cartão parado sobre o leitor…</p>';
+    try {
+      const r = await rfGravarUm(tipo, conteudo, $('rf-nome').value, true);
+      if (r) { rfMsg(`<strong>Cartão gravado e conferido.</strong> ${esc(rfOpcoes.tipos[tipo])}: <code>${esc(r.conteudo)}</code>${r.nome ? ' — ' + esc(r.nome) : ''} · cartão nº ${esc(r.uid)}`); await cartoes(); }
+      else $('rf-resultado').innerHTML = '';
+    } catch (e) { rfMsg(esc(rfErro(e)), true); }
+    finally { $('rf-gravar').disabled = false; }
+  };
+  $('rf-ler').onclick = async () => {
+    $('rf-resultado').innerHTML = '<p class="hint">Lendo…</p>';
+    try {
+      const lido = await agente('/ler', {blocos: [1, 2, 4, 5]});
+      const r = await envia('/api/mes/cartoes/interpretar', {blocos: lido.blocos, uid: lido.uid});
+      const grav = r.gravacoes.length ? `<br><span class="hint">Gravado aqui em ${quando(r.gravacoes[0].ts_ms)} por ${esc(r.gravacoes[0].usuario)}</span>` : '';
+      rfMsg(`<strong>${esc(r.rotulo)}</strong>${r.conteudo ? `: <code>${esc(r.conteudo)}</code>` : ''}${r.nome ? ' — ' + esc(r.nome) : (r.tipo && r.tipo !== 'qualidade' ? ' <span class="chip chip-alerta">sem nome na legenda</span>' : '')}<br><span class="hint">Cartão nº ${esc(lido.uid)}</span>${grav}`, !r.tipo);
+    } catch (e) { rfMsg(esc(rfErro(e)), true); }
+  };
+
+  function rfLoteLista() {
+    const tipo = $('rf-lote-tipo').value;
+    $('rf-lote-lista').innerHTML = rfLista(tipo).map(o => `<label style="flex-direction:row; align-items:center; gap:6px; font-weight:400;">
+      <input type="checkbox" value="${esc(o.codigo)}" style="height:auto;"> <code>${esc(o.codigo)}</code> ${esc(o.nome)}</label>`).join('')
+      || '<p class="hint">Nenhum código na legenda ainda — cadastre nas abas Funcionários / Códigos de parada.</p>';
+  }
+  $('rf-lote-tipo').onchange = rfLoteLista;
+  $('rf-lote-todos').onclick = () => document.querySelectorAll('#rf-lote-lista input').forEach(c => c.checked = true);
+  $('rf-lote-parar').onclick = () => { if (rfLote) rfLote.parar = true; };
+  const espera = ms => new Promise(r => setTimeout(r, ms));
+  $('rf-lote-iniciar').onclick = async () => {
+    const tipo = $('rf-lote-tipo').value;
+    const itens = [...document.querySelectorAll('#rf-lote-lista input:checked')].map(c => rfLista(tipo).find(o => o.codigo === c.value));
+    if (!itens.length) { $('rf-lote-msg').textContent = 'Marque ao menos um código.'; return; }
+    rfLote = {parar: false}; $('rf-lote-iniciar').hidden = true; $('rf-lote-parar').hidden = false;
+    let feitos = 0;
+    try {
+      for (const [i, item] of itens.entries()) {
+        $('rf-lote-msg').textContent = `${i + 1} de ${itens.length}: aproxime um cartão para ${item.codigo} — ${item.nome}`;
+        let st = null;
+        while (!rfLote.parar) {                      // espera um cartão DIFERENTE do último gravado
+          st = await rfEstado();
+          if (st && st.cartao && st.uid !== rfUltimoUid) break;
+          await espera(700);
+        }
+        if (rfLote.parar) break;
+        await rfGravarUm(tipo, item.codigo, item.nome, false);
+        feitos++;
+        $('rf-lote-msg').textContent = `${item.codigo} gravado. Tire o cartão do leitor.`;
+        await espera(1200);
+      }
+      $('rf-lote-msg').textContent = `${feitos} de ${itens.length} cartão(ões) gravado(s) e conferido(s).`;
+    } catch (e) { $('rf-lote-msg').textContent = `Parou após ${feitos}: ${rfErro(e)}`; }
+    finally { rfLote = null; $('rf-lote-iniciar').hidden = false; $('rf-lote-parar').hidden = true; rfHistorico(); }
+  };
+  async function rfHistorico() {
+    const h = await jget('/api/mes/cartoes/historico');
+    $('rf-hist').innerHTML = h.map(x => `<tr><td class="num">${quando(x.ts_ms)}</td><td>${esc(rfOpcoes.tipos[x.tipo] || x.tipo)}</td>
+      <td><code>${esc(x.conteudo)}</code></td><td>${esc(x.nome)}</td><td><code>${esc(x.uid)}</code></td><td>${esc(x.usuario)}</td></tr>`).join('')
+      || '<tr><td colspan="6" class="hint" style="padding:var(--space-4); text-align:center;">Nenhum cartão gravado pelo app ainda.</td></tr>';
+  }
+
   /* ---------- produtos e turnos ---------- */
   let listaProd = [], listaTurno = [];
   const br = v => v == null ? '—' : String(v).replace('.', ',');

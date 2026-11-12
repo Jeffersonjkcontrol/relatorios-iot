@@ -1,0 +1,42 @@
+name: Agente RFID (Windows .exe)
+
+# Gera o AgenteRFID.exe e publica na release "agente-rfid" (link fixo usado pelo app):
+# https://github.com/<repo>/releases/download/agente-rfid/AgenteRFID.exe
+
+on:
+  push:
+    branches: [main]
+    paths: ['agente_rfid/**', '.github/workflows/agente-rfid.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependências
+        run: python -m pip install --upgrade pip pyscard pyinstaller pytest
+
+      - name: Testes do agente
+        run: python -m pytest -q agente_rfid/test_agente_minimo.py
+
+      - name: Empacotar
+        run: pyinstaller --onefile --console --name AgenteRFID agente_rfid/agente.py
+
+      - name: Publicar na release agente-rfid
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view agente-rfid >/dev/null 2>&1 || \
+            gh release create agente-rfid --title "Agente RFID" \
+              --notes "Programa que liga a página Cartões RFID do app ao leitor ACR122U. Baixe o AgenteRFID.exe e deixe-o aberto no PC do leitor."
+          gh release upload agente-rfid dist/AgenteRFID.exe --clobber

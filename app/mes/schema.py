@@ -371,4 +371,19 @@ ALTER TABLE produtos ADD COLUMN ciclo_padrao_s REAL;
 ALTER TABLE produtos ADD COLUMN cavidades INTEGER;
 """
 
-MIGRATIONS: list[str] = [V1, V2]
+# Histórico de cartões RFID gravados pelo app (para saber de quem é um cartão)
+V3 = """
+CREATE TABLE cartoes_gravados (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts_ms INTEGER NOT NULL,
+    uid TEXT NOT NULL DEFAULT '',          -- número de série do cartão
+    tipo TEXT NOT NULL,                    -- op | funcionario | parada | qualidade
+    conteudo TEXT NOT NULL,
+    nome TEXT NOT NULL DEFAULT '',         -- nome traduzido no momento da gravação
+    usuario TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX ix_cartoes_uid ON cartoes_gravados (uid);
+CREATE INDEX ix_cartoes_ts ON cartoes_gravados (ts_ms);
+"""
+
+MIGRATIONS: list[str] = [V1, V2, V3]

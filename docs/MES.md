@@ -193,6 +193,53 @@ omitido para o número ficar legível de longe.
 
 ---
 
+## 6c. Gravar cartões RFID
+
+**Configurações → Cartões RFID** grava os cartões das máquinas com o leitor
+**ACR122U** plugado num PC da mesma rede do app.
+
+### Como funciona
+
+O navegador não fala com leitor USB sozinho, então o PC do leitor roda um
+pequeno programa, o **AgenteRFID.exe**:
+
+```
+página do app (navegador)  ->  AgenteRFID.exe (127.0.0.1:47321)  ->  ACR122U (USB)
+```
+
+- Baixe em https://github.com/Jeffersonjkcontrol/relatorios-iot/releases/download/agente-rfid/AgenteRFID.exe
+  (o link também aparece na tela quando o agente não está aberto). Não precisa de Java.
+- Precisa do driver do ACR122U instalado (o mesmo do programa antigo).
+- Deixe a janela do agente aberta enquanto grava. Se o navegador perguntar se a
+  página pode acessar a rede local, permita.
+- O agente só aceita pedidos de páginas da rede local (`relatorios.local`, IPs
+  192.168/10/172.16-31, localhost). Um site da internet não consegue usá-lo.
+
+### O que dá para gravar
+
+| Tipo | Bloco 1 | Bloco 2 |
+|---|---|---|
+| Ordem de produção | `op_rfid` | nº da OP (só números) |
+| Funcionário | `fun_rfid` | código (letras/números, sem espaço) |
+| Código de parada | `maq_rfid` | código (só números) |
+| Qualidade | `quali_rfid` | `aprovado` ou `reprovado` |
+
+Máximo de 16 caracteres, sem acento. Os blocos 4 e 5 são sempre regravados em
+branco (o firmware emenda o conteúdo dos blocos 2, 4 e 5). Os blocos de chave do
+cartão (0, 3, 7…) nunca são gravados.
+
+Cada gravação é **lida de volta e conferida**. A tela também:
+- avisa ao gravar os códigos de parada 10 e 24 (bloqueiam a contagem) e 13 (não libera o relé);
+- cadastra na legenda o nome digitado para um código novo;
+- **lê** um cartão e mostra o tipo, o conteúdo e o nome;
+- grava **em sequência** (marque vários códigos e vá trocando o cartão);
+- guarda o **histórico**: quem gravou, quando e o número de série do cartão.
+
+O `.exe` é gerado automaticamente pelo GitHub Actions (workflow `agente-rfid.yml`)
+quando a pasta `agente_rfid/` muda.
+
+---
+
 ## 7. Integração com ERP
 
 ### CSV

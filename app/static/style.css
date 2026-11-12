@@ -1250,3 +1250,6 @@ body:has(.mes-wide) main { max-width: 1400px; }
 textarea { font-family: inherit; font-size: var(--fs-md); padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); width: 100%; }
 .sub { margin: 0 0 var(--space-2); font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .chip-critico { background: var(--danger-soft); color: var(--danger-text); border-color: transparent; }
+
+/* atributo hidden vence o display definido nas classes (labels e botoes sao flex) */
+[hidden] { display: none !important; }

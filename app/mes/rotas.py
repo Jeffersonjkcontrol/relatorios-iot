@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from app import cadastros as legenda
 from app.auth import User, require_gestor, require_user
-from app.mes import apontamentos, cadastros, config, eventos, ingestao, integracao, ordens, producao, rastreabilidade
+from app.mes import apontamentos, cadastros, cartoes, config, eventos, ingestao, integracao, ordens, producao, rastreabilidade
 from app.mes.coletor import ativar_mes, coletor, desativar_mes, reconhecer_conta
 
 router = APIRouter()
@@ -364,6 +364,69 @@ def api_importar_legenda(dados: dict = Body(...), user: User = Depends(require_g
     if tipo == "motivo" and ok:
         ingestao.reassociar_tudo()
     return {"importados": ok, "erros": erros[:30]}
+
+
+# ------------------------------------------------------- cartões RFID (gestor)
+URL_AGENTE = "https://github.com/Jeffersonjkcontrol/relatorios-iot/releases/download/agente-rfid/AgenteRFID.exe"
+
+
+@router.get("/api/mes/cartoes/opcoes")
+def api_cartoes_opcoes(user: User = Depends(require_gestor)):
+    """O que dá para gravar: OPs abertas e a legenda de funcionários e paradas."""
+    def legenda_de(tipo):
+        return [{"codigo": c.codigo, "nome": c.nome, "classe": c.classe}
+                for c in legenda.list_codigos(tipo) if c.ativo]
+    ops = ordens.listar(status=list(ordens.ABERTAS), limite=500)
+    return {
+        "tipos": {k: v["rotulo"] for k, v in cartoes.TIPOS.items()},
+        "ops": [{"codigo": o["numero"], "nome": o["produto_descricao"] or o["status_rotulo"]} for o in ops],
+        "funcionario": legenda_de("funcionario"), "parada": legenda_de("motivo"),
+        "url_agente": URL_AGENTE,
+    }
+
+
+@router.post("/api/mes/cartoes/preparar")
+def api_cartao_preparar(dados: dict = Body(...), user: User = Depends(require_gestor)):
+    """Valida e devolve os blocos a gravar. Nome novo de funcionário/parada já
+    entra na legenda."""
+    try:
+        r = cartoes.montar(dados.get("tipo", ""), dados.get("conteudo", ""))
+        nome = str(dados.get("nome") or "").strip()
+        if nome and r["tipo"] in ("funcionario", "parada"):
+            _salvar_codigo("funcionario" if r["tipo"] == "funcionario" else "motivo",
+                           {"codigo": r["conteudo"], "nome": nome})
+    except ValueError as e:
+        raise _erro(e)
+    return r
+
+
+@router.post("/api/mes/cartoes/interpretar")
+def api_cartao_interpretar(dados: dict = Body(...), user: User = Depends(require_gestor)):
+    """Traduz o que foi lido do cartão: tipo, conteúdo, nome na legenda e
+    quando/por quem foi gravado aqui."""
+    r = cartoes.interpretar(dados.get("blocos") or {})
+    mapa = {"funcionario": "funcionario", "parada": "motivo"}.get(r["tipo"])
+    r["nome"] = legenda.resolve_map(mapa).get(r["conteudo"]) if mapa else None
+    if r["tipo"] == "op":
+        o = ordens.obter_por_numero(r["conteudo"])
+        r["nome"] = (o["produto_descricao"] or o["status_rotulo"]) if o else "OP não cadastrada no MES"
+    r["gravacoes"] = cartoes.historico(uid=str(dados.get("uid") or ""), limite=5) if dados.get("uid") else []
+    return r
+
+
+@router.post("/api/mes/cartoes/historico")
+def api_cartao_registrar(dados: dict = Body(...), user: User = Depends(require_gestor)):
+    try:
+        cartoes.registrar(dados.get("tipo", ""), dados.get("conteudo", ""), dados.get("uid", ""),
+                          dados.get("nome", ""), user.username)
+    except ValueError as e:
+        raise _erro(e)
+    return {"ok": True}
+
+
+@router.get("/api/mes/cartoes/historico")
+def api_cartao_historico(uid: str = "", user: User = Depends(require_gestor)):
+    return cartoes.historico(uid)
 
 
 # ------------------------------------------------------- integrações (gestor)
