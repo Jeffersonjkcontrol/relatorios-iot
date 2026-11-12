@@ -21,25 +21,30 @@
     .kpi.ok b { color: var(--ok); } .kpi.parada b { color: var(--parada); } .kpi.ociosa b { color: var(--ociosa); }
     #relogio { font-size: 2.2vw; font-variant-numeric: tabular-nums; color: var(--suave); }
     #grade { flex: 1; display: grid; gap: .8vw; min-height: 0; }
+    /* As letras seguem o tamanho do CARTÃO (cqw/cqh), não o da tela: com 4 fileiras
+       numa tela baixa, ou 2 numa tela alta, o texto sempre cabe. */
     .maq { background: var(--cartao); border: 1px solid var(--borda); border-left: .6vw solid var(--semdados); border-radius: .6vw;
-           padding: .6vw .9vw; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; overflow: hidden; }
+           padding: 0; container-type: size; min-height: 0; overflow: hidden; position: relative; }
+    .maq > .dentro { position: absolute; inset: 6% 5% 6% 7%; display: flex; flex-direction: column; justify-content: space-between; }
+    .maq > .dentro > * { flex-shrink: 0; }
     .maq.produzindo { border-left-color: var(--ok); }
     .maq.parada { border-left-color: var(--parada); background: #2a1215; }
     .maq.ociosa { border-left-color: var(--ociosa); }
-    .maq .topo { display: flex; justify-content: space-between; align-items: baseline; gap: .5vw; }
-    .maq .nome { font-size: 1.9vw; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
-    .maq .estado { font-size: .9vw; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap;
+    .maq .topo { display: flex; justify-content: space-between; align-items: baseline; gap: 3cqw; }
+    .maq .nome { font-size: min(14cqw, 19cqh); font-weight: 700; white-space: nowrap; flex-shrink: 0; line-height: 1.1; }
+    .maq .estado { font-size: min(6.5cqw, 9cqh); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
                    min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .produzindo .estado { color: var(--ok); } .parada .estado { color: var(--parada); }
     .ociosa .estado { color: var(--ociosa); } .sem_dados .estado { color: var(--semdados); }
-    .maq .meio { font-size: 1.05vw; color: var(--suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .maq .meio { font-size: min(7.5cqw, 11cqh); color: var(--suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                 line-height: 1.25; flex-shrink: 0; }
     .maq .meio strong { color: var(--texto); }
-    .maq .base { display: flex; justify-content: space-between; align-items: baseline; font-variant-numeric: tabular-nums; }
-    .maq .ciclo { font-size: 1.9vw; font-weight: 700; }
-    .maq .ciclo small { font-size: .9vw; color: var(--suave); font-weight: 400; }
-    .maq .pecas { font-size: 1.05vw; color: var(--suave); text-align: right; line-height: 1.25; }
+    .maq .base { display: flex; justify-content: space-between; align-items: flex-end; font-variant-numeric: tabular-nums; }
+    .maq .ciclo { font-size: min(13cqw, 20cqh); font-weight: 700; line-height: 1; }
+    .maq .ciclo small { font-size: .45em; color: var(--suave); font-weight: 400; }
+    .maq .pecas { font-size: min(7cqw, 10.5cqh); color: var(--suave); text-align: right; line-height: 1.2; }
     .maq .pecas b { color: var(--texto); font-weight: 700; }
-    .barra { height: .35vw; background: var(--borda); border-radius: 1vw; overflow: hidden; }
+    .barra { height: 2.5cqh; background: var(--borda); border-radius: 1vw; overflow: hidden; }
     .barra i { display: block; height: 100%; background: var(--ok); }
     footer { display: flex; justify-content: space-between; font-size: .85vw; color: var(--suave); }
     #aviso { color: var(--parada); font-weight: 700; }
@@ -97,12 +102,12 @@
       const op = m.op, p = m.parada;
       const meio = p ? `<strong>${esc(p.nome)}</strong> · há ${dur(p.duracao_s)}`
                      : op ? `OP <strong>${esc(op.numero)}</strong>${op.produto ? ' · ' + esc(op.produto) : ''}` : 'sem OP';
-      return `<div class="maq ${m.status}">
+      return `<div class="maq ${m.status}"><div class="dentro">
         <div class="topo"><span class="nome">${esc(m.nome.slice(prefixo.length) || m.nome)}</span><span class="estado">${ROTULO[m.status]}</span></div>
         <div class="meio">${meio}</div>
         ${op && op.pct != null ? `<div class="barra"><i style="width:${op.pct}%"></i></div>` : ''}
         <div class="base"><span class="ciclo">${m.ciclo_s == null ? '—' : m.ciclo_s.toFixed(1).replace('.', ',')}<small> s</small></span>
-          <span class="pecas"><b>${num(m.pecas_dia)}</b> hoje${op ? `<br>OP <b>${num(op.boas)}</b>${op.quantidade ? ' / ' + num(op.quantidade) : ''}` : ''}</span></div></div>`;
+          <span class="pecas"><b>${num(m.pecas_dia)}</b> hoje${op ? `<br>OP <b>${num(op.boas)}</b>${op.quantidade ? ' / ' + num(op.quantidade) : ''}` : ''}</span></div></div></div>`;
     }).join('');
     $('pagina').textContent = paginas > 1 ? `Tela ${pagina + 1} de ${paginas}` : '';
   }
