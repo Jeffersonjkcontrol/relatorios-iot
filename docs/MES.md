@@ -179,11 +179,13 @@ reinícios do dispositivo e a causa (`reset_reason`: queda de tensão, watchdog.
 ## 6b. Tela de TV
 
 `/mes/tv` — para deixar numa TV no chão de fábrica: tela cheia, letras grandes,
-máquinas paradas primeiro, atualiza a cada 15 s e alterna as telas sozinha.
+máquinas em ordem numérica (cada uma sempre no mesmo lugar), atualiza a cada 15 s
+e alterna as telas sozinha.
 Abre também pelo link **Abrir tela de TV** na página Fábrica.
 
 - `?porpagina=24` — máquinas por tela (padrão 24)
 - `?troca=15` — segundos por tela (padrão 15)
+- `?ordem=situacao` — paradas primeiro, depois ociosas, depois produzindo
 
 Exige login: entre uma vez no navegador da TV com um usuário só de consulta
 (papel **operador**). O prefixo comum dos nomes ("Nitron inj01" → "inj01") é

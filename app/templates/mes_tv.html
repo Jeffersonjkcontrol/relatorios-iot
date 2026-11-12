@@ -70,6 +70,8 @@
   const params = new URLSearchParams(location.search);
   const POR_PAGINA = Math.max(4, parseInt(params.get('porpagina')) || 24);
   const TROCA_S = Math.max(5, parseInt(params.get('troca')) || 15);
+  // padrão: ordem numérica (cada máquina sempre no mesmo lugar); ?ordem=situacao põe as paradas primeiro
+  const POR_SITUACAO = params.get('ordem') === 'situacao';
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num = n => Number(n || 0).toLocaleString('pt-BR');
@@ -115,7 +117,8 @@
     try {
       const [ms, r] = await Promise.all([fetch('/api/mes/maquinas'), fetch('/api/mes/resumo?periodo=hoje')]);
       if (ms.status === 401) { location.href = '/login?next=/mes/tv'; return; }
-      maquinas = (await ms.json()).sort((a, b) => ORDEM[a.status] - ORDEM[b.status] || a.nome.localeCompare(b.nome, 'pt-BR', {numeric: true}));
+      const porNome = (a, b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric: true});
+      maquinas = (await ms.json()).sort(POR_SITUACAO ? (a, b) => ORDEM[a.status] - ORDEM[b.status] || porNome(a, b) : porNome);
       const d = await r.json();
       prefixo = prefixoComum(maquinas.map(m => m.nome));
       $('titulo').textContent = prefixo ? 'Fábrica · ' + prefixo.trim() : 'Fábrica';
