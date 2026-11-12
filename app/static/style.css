@@ -1253,3 +1253,10 @@ textarea { font-family: inherit; font-size: var(--fs-md); padding: 8px 12px; bor
 
 /* atributo hidden vence o display definido nas classes (labels e botoes sao flex) */
 [hidden] { display: none !important; }
+
+/* links com cara de botao (ex.: atalhos do painel Admin) */
+a.btn-secondary, a.btn-primary { display: inline-flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-4);
+  border-radius: var(--radius); border: 1px solid var(--border-strong); font-size: var(--fs-md); font-weight: 500; text-decoration: none; }
+a.btn-secondary { background: var(--surface); color: var(--text); }
+a.btn-secondary:hover { background: var(--surface-hover); }
+a.btn-primary { background: var(--kpi-primary-grad); color: var(--primary-on); border-color: transparent; }
