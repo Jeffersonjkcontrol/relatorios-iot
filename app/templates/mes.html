@@ -92,7 +92,7 @@
     <button class="tab" data-st="planejada,liberada">Na fila <b id="n-fila"></b></button>
     <button class="tab" data-st="concluida,cancelada">Encerradas <b id="n-concluida"></b></button>
     <input type="text" id="busca-op" placeholder="Buscar OP, produto, cliente" style="margin-left:auto; width:240px;">
-    {% if current_user and current_user.role == 'gestor' %}<button type="button" class="btn-primary" id="btn-nova-op">Nova OP</button>{% endif %}
+    {% if pode.op_planejar %}<button type="button" class="btn-primary" id="btn-nova-op">Nova OP</button>{% endif %}
   </div>
   <div class="card">
     <div class="table-wrap" style="max-height:620px;"><table class="moldes-table"><thead><tr>
@@ -191,6 +191,7 @@
 {% block scripts %}
 <script>
 const GESTOR = {{ 'true' if current_user and current_user.role == 'gestor' else 'false' }};
+const PODE = {{ pode | tojson }};
 const { jget } = window.app;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -290,14 +291,14 @@ async function paradas() {
         <span class="hint">${m.ocorrencias}× · ${dur(m.tempo_s)} · ${String(m.pct).replace('.', ',')}%</span></div>
       <div class="pareto-trilho"><i style="width:${Math.max(m.pct, 0.5)}%"></i></div></div>`).join('') || '<p class="hint">Nenhuma parada no período.</p>';
   const semNome = d.pareto.filter(m => !m.cadastrado).length;
-  $('pareto-dica').innerHTML = semNome ? `${semNome} código(s) ainda sem nome — ${GESTOR ? '<a href="/config#paradas">preencher a legenda</a>' : 'peça ao gestor para preencher a legenda'}.` : '';
+  $('pareto-dica').innerHTML = semNome ? `${semNome} código(s) ainda sem nome — ${PODE.legenda ? '<a href="/config#paradas">preencher a legenda</a>' : 'peça ao gestor para preencher a legenda'}.` : '';
   $('par-n').textContent = `(${d.eventos.length}${d.total > d.eventos.length ? ' de ' + d.total : ''})`;
   const opcoes = d.motivos.map(m => `<option value="${esc(m.codigo)}">${esc(m.nome)}</option>`).join('');
   $('tab-paradas').innerHTML = d.eventos.map(e => `<tr>
     <td><strong>${esc(e.maquina)}</strong></td><td class="num">${hora(e.inicio_ms)}</td>
     <td class="num">${e.em_andamento ? '<span class="chip chip-alerta">em andamento</span>' : hora(e.fim_ms)}</td>
     <td class="num">${dur(e.duracao_s)}</td>
-    <td>${e.motivo.codigo && e.motivo_origem !== 'manual' ? esc(e.motivo.nome) :
+    <td>${(e.motivo.codigo && e.motivo_origem !== 'manual') || !PODE.apontar ? esc(e.motivo.nome) :
         `<select class="sel-motivo" data-id="${e.id}"><option value="">${e.motivo.codigo ? '' : 'apontar…'}</option>${opcoes}</select>`}</td>
     <td>${esc(e.ordem || '')}</td><td>${esc(e.funcionario || '')}</td></tr>`).join('');
   document.querySelectorAll('.sel-motivo').forEach(s => {
@@ -344,13 +345,14 @@ async function carregarBase() {
 function acoes(o) {
   const b = (acao, rotulo) => `<button class="btn-link" data-acao="${acao}" data-id="${o.id}">${rotulo}</button>`;
   const st = o.status, a = [];
-  if (st === 'planejada' && GESTOR) a.push(b('liberar', 'liberar'));
-  if (['planejada', 'liberada', 'pausada'].includes(st)) a.push(b('iniciar', st === 'pausada' ? 'retomar' : 'iniciar'));
-  if (st === 'em_producao') a.push(b('pausar', 'pausar'));
-  if (['em_producao', 'pausada'].includes(st)) a.push(b('concluir', 'concluir'), b('refugo', 'refugo'));
-  if (GESTOR && !['concluida', 'cancelada'].includes(st)) a.push(b('editar', o.cadastro_incompleto ? 'completar' : 'editar'));
-  if (GESTOR && ['planejada', 'liberada'].includes(st)) a.push(b('cancelar', 'cancelar'));
-  if (GESTOR && ['concluida', 'cancelada'].includes(st)) a.push(b('reabrir', 'reabrir'));
+  if (st === 'planejada' && PODE.op_planejar) a.push(b('liberar', 'liberar'));
+  if (PODE.op_executar && ['planejada', 'liberada', 'pausada'].includes(st)) a.push(b('iniciar', st === 'pausada' ? 'retomar' : 'iniciar'));
+  if (PODE.op_executar && st === 'em_producao') a.push(b('pausar', 'pausar'));
+  if (PODE.op_executar && ['em_producao', 'pausada'].includes(st)) a.push(b('concluir', 'concluir'));
+  if (PODE.apontar && ['em_producao', 'pausada'].includes(st)) a.push(b('refugo', 'refugo'));
+  if (PODE.op_planejar && !['concluida', 'cancelada'].includes(st)) a.push(b('editar', o.cadastro_incompleto ? 'completar' : 'editar'));
+  if (PODE.op_planejar && ['planejada', 'liberada'].includes(st)) a.push(b('cancelar', 'cancelar'));
+  if (PODE.op_planejar && ['concluida', 'cancelada'].includes(st)) a.push(b('reabrir', 'reabrir'));
   return a.join(' ');
 }
 const opcoesMaquina = (sel, vazio) => (vazio ? '<option value="">— definir depois —</option>' : '') +

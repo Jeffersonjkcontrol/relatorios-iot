@@ -374,13 +374,35 @@ Sidebar de conversas anteriores + chat principal.
 - "Compare ciclo médio das inj81 e inj82 nesta semana"
 - "Gere PDF de OEE da inj82 ontem"
 
-### 👥 `/users` — Usuários (só gestor)
+### 👥 `/users` — Usuários e permissões (só gestor)
 
-Listar, criar, excluir usuários.
+Listar, criar, excluir usuários, redefinir senha e trocar o papel de cada um.
 
-**Papéis:**
-- **Gestor:** acesso total (todas páginas + admin)
-- **Operador:** somente leitura (Relatórios, OEE, IA, Live, Moldes)
+**Três papéis:**
+- **Gestor:** acesso total, sempre.
+- **Supervisor** e **Operador:** o gestor marca o que cada um pode fazer na tabela
+  **Permissões por papel** (vale na hora para todos do papel).
+
+| Permissão | Padrão Supervisor | Padrão Operador |
+|---|:---:|:---:|
+| Executar OP (iniciar, pausar, concluir) | ✓ | ✓ |
+| Apontar refugo e motivo de parada | ✓ | ✓ |
+| Planejar OP (criar, editar, liberar, cancelar, reabrir, importar CSV) | ✓ | |
+| Excluir refugo | ✓ | |
+| Legenda (códigos de parada e funcionários) | ✓ | |
+| Produtos e turnos | ✓ | |
+| Cartões RFID | ✓ | |
+| Relatórios PDF/CSV | ✓ | ✓ |
+| IA | ✓ | ✓ |
+| Auditoria | | |
+
+Sempre só do gestor (não delegável): Admin (manutenção, reiniciar, backup, logs),
+usuários e permissões, coleta do MES, integrações com ERP e conhecimento da IA.
+Se fossem delegáveis, quem as tivesse poderia se dar acesso total.
+
+Ver painéis (Fábrica, TV, Ao vivo, OEE, Paradas, Moldes) é liberado para todos.
+O bloqueio vale no servidor: abrir um endereço sem permissão devolve "sem
+permissão", e a tentativa fica na auditoria como recusada.
 
 ### 🛠️ `/admin` — Painel admin (só gestor)
 

@@ -38,7 +38,7 @@ from app.ai.knowledge import (
     get_oee_targets, set_oee_targets,
 )
 from app.auth import (
-    User, current_user, require_user, require_gestor,
+    User, current_user, require_user, require_gestor, require_perm,
     create_session_cookie, COOKIE_NAME,
 )
 from app.auth.db import (
@@ -97,9 +97,14 @@ _VERSAO_ESTATICOS = int(max(f.stat().st_mtime for f in (BASE_DIR / "static").ite
 
 def tctx(request: Request, **extra) -> dict:
     """Contexto-base para todas as templates: inclui current_user e platforms."""
+    from app.auth import permissoes as _perm
+    usuario = current_user(request)
     base = {
         "request": request,
-        "current_user": current_user(request),
+        "current_user": usuario,
+        "pode": _perm.do_usuario(usuario),           # {permissão: bool} para o menu e as telas
+        "abas_config": _perm.abas_config(usuario),
+        "papeis": _perm.PAPEIS,
         "platforms": PLATFORMS,
         "year": datetime.now().year,
         "v": _VERSAO_ESTATICOS,     # muda a cada atualização: o navegador não reusa CSS/JS antigos
@@ -340,8 +345,10 @@ async def page_users(request: Request, user: User = Depends(require_gestor)):
         "must_change_password": u.must_change_password,
         "created_at_fmt": datetime.fromtimestamp(u.created_at).strftime("%d/%m/%Y %H:%M"),
     } for u in users]
+    from app.auth import permissoes as _perm
     return templates.TemplateResponse("users.html", tctx(
         request, current_page="users", users=users_data, current=user,
+        catalogo=_perm.PERMISSOES, matriz=_perm.matriz(), configuraveis=_perm.CONFIGURAVEIS,
         msg=request.query_params.get("msg"),
         error=request.query_params.get("error"),
     ))
@@ -359,6 +366,26 @@ async def create_user_route(
     except ValueError as e:
         return RedirectResponse(url=f"/users?error={e}", status_code=303)
     return RedirectResponse(url=f"/users?msg=Usuário+criado", status_code=303)
+
+
+@app.post("/users/permissoes")
+async def salvar_permissoes(request: Request, user: User = Depends(require_gestor)):
+    from app.auth import permissoes as _perm
+    form = await request.form()
+    _perm.salvar({p: form.getlist(p) for p in _perm.CONFIGURAVEIS})
+    return RedirectResponse(url="/users?msg=Permissões+salvas#permissoes", status_code=303)
+
+
+@app.post("/users/{uid}/role")
+async def mudar_papel(uid: int, role: str = Form(...), user: User = Depends(require_gestor)):
+    from app.auth.db import set_role
+    if uid == user.id:
+        return RedirectResponse(url="/users?error=Você+não+pode+mudar+o+próprio+papel", status_code=303)
+    try:
+        set_role(uid, role)
+    except ValueError as e:
+        return RedirectResponse(url=f"/users?error={e}", status_code=303)
+    return RedirectResponse(url="/users?msg=Papel+alterado", status_code=303)
 
 
 @app.post("/users/{uid}/delete")
@@ -490,7 +517,7 @@ def _filtro_auditoria(request: Request) -> dict:
 
 
 @app.get("/admin/auditoria", response_class=HTMLResponse)
-async def page_auditoria(request: Request, user: User = Depends(require_gestor)):
+async def page_auditoria(request: Request, user: User = Depends(require_perm("auditoria"))):
     from app.mes import tempo
     try:
         filtro = _filtro_auditoria(request)
@@ -507,7 +534,7 @@ async def page_auditoria(request: Request, user: User = Depends(require_gestor))
 
 
 @app.get("/admin/auditoria.csv")
-async def auditoria_csv(request: Request, user: User = Depends(require_gestor)):
+async def auditoria_csv(request: Request, user: User = Depends(require_perm("auditoria"))):
     try:
         linhas = auditoria.listar(**_filtro_auditoria(request), limite=100_000)
     except ValueError as e:
@@ -540,14 +567,14 @@ async def page_oee(request: Request):
 
 
 @app.get("/config", response_class=HTMLResponse)
-async def page_config(request: Request, user: User = Depends(require_gestor)):
+async def page_config(request: Request, user: User = Depends(require_perm("legenda", "cadastros", "cartoes"))):
     return templates.TemplateResponse(
         "config.html", tctx(request, current_page="config", ai_providers=list_providers()),
     )
 
 
 @app.get("/ai", response_class=HTMLResponse)
-async def page_ai(request: Request):
+async def page_ai(request: Request, _perm: User = Depends(require_perm("ia"))):
     return templates.TemplateResponse(
         "ai.html", tctx(request, current_page="ai", ai_providers=list_providers()),
     )
@@ -635,7 +662,7 @@ async def api_paradas(
 
 
 @app.get("/cadastros", response_class=HTMLResponse)
-async def page_cadastros(request: Request, user: User = Depends(require_gestor)):
+async def page_cadastros(request: Request, user: User = Depends(require_perm("legenda"))):
     return templates.TemplateResponse("cadastros.html", tctx(
         request, current_page="cadastros",
         motivos=list_codigos("motivo"),
@@ -651,7 +678,7 @@ async def cadastros_create(
     codigo: str = Form(...),
     nome: str = Form(...),
     categoria: str = Form(""),
-    user: User = Depends(require_gestor),
+    user: User = Depends(require_perm("legenda")),
 ):
     try:
         create_codigo(tipo, codigo, nome, categoria)
@@ -661,7 +688,7 @@ async def cadastros_create(
 
 
 @app.post("/cadastros/{cid}/delete")
-async def cadastros_delete(cid: int, user: User = Depends(require_gestor)):
+async def cadastros_delete(cid: int, user: User = Depends(require_perm("legenda"))):
     delete_codigo(cid)
     return RedirectResponse(url="/cadastros?msg=Código+excluído", status_code=303)
 
@@ -671,6 +698,7 @@ async def relatorio_paradas(
     platform: str = Form(...),
     days: int = Form(7),
     device: str = Form(""),
+    _perm: User = Depends(require_perm("relatorios")),
 ):
     try:
         data = await analyze_paradas(platform, device or None, days)
@@ -716,7 +744,7 @@ async def ai_conversation_delete(cid: str):
 
 
 @app.post("/api/ai/chat")
-async def ai_chat(request: Request):
+async def ai_chat(request: Request, _perm: User = Depends(require_perm("ia"))):
     body = await request.json()
     provider_id = body.get("provider")
     model = body.get("model")
@@ -898,6 +926,7 @@ async def gerar_relatorio(
     start: str = Form(""),
     end: str = Form(""),
     formato: str = Form("pdf"),
+    _perm: User = Depends(require_perm("relatorios")),
 ):
     client = _client(platform)
     start_ms = date_to_ms(start) if start else None
@@ -970,6 +999,7 @@ async def relatorio_oee(
     ciclo_ideal: float = Form(...),
     refugo: int = Form(0),
     outlier_factor: float = Form(3.0),
+    _perm: User = Depends(require_perm("relatorios")),
 ):
     client = _client(platform)
     start_ms = date_to_ms(start)

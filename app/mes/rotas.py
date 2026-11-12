@@ -12,7 +12,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from app import cadastros as legenda
-from app.auth import User, require_gestor, require_user
+from app.auth import User, pode, require_gestor, require_perm, require_user
 from app.mes import apontamentos, cadastros, cartoes, config, eventos, ingestao, integracao, ordens, producao, rastreabilidade
 from app.mes.coletor import ativar_mes, coletor, desativar_mes, reconhecer_conta
 
@@ -98,7 +98,7 @@ def api_saude(periodo: str = "hoje", inicio: str = "", fim: str = "", user: User
 
 
 @router.post("/api/mes/paradas/{parada_id}/motivo")
-def api_apontar_motivo(parada_id: int, dados: dict = Body(...), user: User = Depends(require_user)):
+def api_apontar_motivo(parada_id: int, dados: dict = Body(...), user: User = Depends(require_perm("apontar"))):
     try:
         if dados.get("codigo"):
             apontamentos.apontar_motivo_parada(parada_id, dados["codigo"], user.username,
@@ -138,7 +138,7 @@ def api_ordens(status: str = "", busca: str = "", incompletas: bool = False,
 
 
 @router.post("/api/mes/ordens/{ordem_id}/completar")
-def api_completar_ordem(ordem_id: int, dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_completar_ordem(ordem_id: int, dados: dict = Body(...), user: User = Depends(require_perm("op_planejar"))):
     """Preenche produto/quantidade/ciclo de uma OP que nasceu do cartão."""
     try:
         campos = {k: v for k, v in dados.items()
@@ -170,7 +170,7 @@ def _dados_da_op(dados: dict) -> dict:
 
 
 @router.post("/api/mes/ordens")
-def api_criar_ordem(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_criar_ordem(dados: dict = Body(...), user: User = Depends(require_perm("op_planejar"))):
     try:
         oid = ordens.criar(_dados_da_op(dados), user.username)
         if dados.get("liberar"):
@@ -181,7 +181,7 @@ def api_criar_ordem(dados: dict = Body(...), user: User = Depends(require_gestor
 
 
 @router.post("/api/mes/ordens/{ordem_id}/editar")
-def api_editar_ordem(ordem_id: int, dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_editar_ordem(ordem_id: int, dados: dict = Body(...), user: User = Depends(require_perm("op_planejar"))):
     try:
         ordens.atualizar(ordem_id, _dados_da_op(dados), user.username)
     except ValueError as e:
@@ -191,11 +191,11 @@ def api_editar_ordem(ordem_id: int, dados: dict = Body(...), user: User = Depend
 
 @router.post("/api/mes/ordens/{ordem_id}/{acao}")
 def api_acao_ordem(ordem_id: int, acao: str, dados: dict = Body(default={}), user: User = Depends(require_user)):
-    """PCP (gestor) libera, cancela, reabre e exclui; o chão de fábrica (qualquer
-    usuário) inicia, pausa e conclui."""
-    so_gestor = {"liberar", "recolher", "cancelar", "reabrir", "excluir"}
-    if acao in so_gestor and user.role != "gestor":
-        raise HTTPException(status_code=403, detail="Permissão de gestor necessária.")
+    """Iniciar/pausar/concluir exigem 'Executar OP'; liberar, recolher, cancelar,
+    reabrir e excluir exigem 'Planejar OP'."""
+    perm = "op_executar" if acao in ("iniciar", "pausar", "concluir") else "op_planejar"
+    if not pode(user, perm):
+        raise HTTPException(status_code=403, detail="Sem permissão para esta ação. Fale com o gestor.")
     try:
         if acao == "iniciar":
             ordens.iniciar(ordem_id, user.username, maquina_id=int(dados["maquina_id"]) if dados.get("maquina_id") else None,
@@ -219,7 +219,7 @@ def api_refugos(ordem_id: int, user: User = Depends(require_user)):
 
 
 @router.post("/api/mes/refugos")
-def api_apontar_refugo(dados: dict = Body(...), user: User = Depends(require_user)):
+def api_apontar_refugo(dados: dict = Body(...), user: User = Depends(require_perm("apontar"))):
     try:
         rid = apontamentos.apontar_refugo(dados, user.username)
     except ValueError as e:
@@ -228,7 +228,7 @@ def api_apontar_refugo(dados: dict = Body(...), user: User = Depends(require_use
 
 
 @router.delete("/api/mes/refugos/{refugo_id}")
-def api_excluir_refugo(refugo_id: int, user: User = Depends(require_gestor)):
+def api_excluir_refugo(refugo_id: int, user: User = Depends(require_perm("refugo_excluir"))):
     try:
         apontamentos.excluir_refugo(refugo_id)
     except ValueError as e:
@@ -238,12 +238,12 @@ def api_excluir_refugo(refugo_id: int, user: User = Depends(require_gestor)):
 
 # ------------------------------------------------ cadastros: turnos e produtos
 @router.get("/api/mes/turnos")
-def api_turnos(user: User = Depends(require_gestor)):
+def api_turnos(user: User = Depends(require_perm("cadastros"))):
     return cadastros.listar_turnos()
 
 
 @router.post("/api/mes/turnos")
-def api_salvar_turno(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_salvar_turno(dados: dict = Body(...), user: User = Depends(require_perm("cadastros"))):
     try:
         return {"id": cadastros.salvar_turno(dados, int(dados["id"]) if dados.get("id") else None)}
     except ValueError as e:
@@ -251,18 +251,18 @@ def api_salvar_turno(dados: dict = Body(...), user: User = Depends(require_gesto
 
 
 @router.delete("/api/mes/turnos/{turno_id}")
-def api_excluir_turno(turno_id: int, user: User = Depends(require_gestor)):
+def api_excluir_turno(turno_id: int, user: User = Depends(require_perm("cadastros"))):
     cadastros.excluir_turno(turno_id)
     return {"ok": True}
 
 
 @router.get("/api/mes/produtos")
-def api_produtos(busca: str = "", user: User = Depends(require_gestor)):
+def api_produtos(busca: str = "", user: User = Depends(require_perm("cadastros"))):
     return cadastros.listar_produtos(busca)
 
 
 @router.post("/api/mes/produtos")
-def api_salvar_produto(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_salvar_produto(dados: dict = Body(...), user: User = Depends(require_perm("cadastros"))):
     try:
         existente = cadastros.obter_produto_por_codigo(str(dados.get("codigo") or ""))
         return {"id": cadastros.salvar_produto(dados, existente["id"] if existente else None)}
@@ -271,7 +271,7 @@ def api_salvar_produto(dados: dict = Body(...), user: User = Depends(require_ges
 
 
 @router.delete("/api/mes/produtos/{produto_id}")
-def api_excluir_produto(produto_id: int, user: User = Depends(require_gestor)):
+def api_excluir_produto(produto_id: int, user: User = Depends(require_perm("cadastros"))):
     try:
         cadastros.excluir_produto(produto_id)
     except ValueError as e:
@@ -317,7 +317,7 @@ def _salvar_codigo(tipo: str, dados: dict) -> None:
 
 
 @router.post("/api/mes/legenda")
-def api_salvar_legenda(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_salvar_legenda(dados: dict = Body(...), user: User = Depends(require_perm("legenda"))):
     """Cria ou atualiza um código. Mudar a legenda de paradas corrige o histórico."""
     tipo = _tipo_valido(dados.get("tipo", "motivo"))
     try:
@@ -329,7 +329,7 @@ def api_salvar_legenda(dados: dict = Body(...), user: User = Depends(require_ges
 
 
 @router.delete("/api/mes/legenda/{codigo_id}")
-def api_excluir_legenda(codigo_id: int, user: User = Depends(require_gestor)):
+def api_excluir_legenda(codigo_id: int, user: User = Depends(require_perm("legenda"))):
     item = legenda.get_codigo(codigo_id)
     legenda.delete_codigo(codigo_id)
     if item and item.tipo == "motivo":
@@ -338,7 +338,7 @@ def api_excluir_legenda(codigo_id: int, user: User = Depends(require_gestor)):
 
 
 @router.post("/api/mes/legenda/importar")
-def api_importar_legenda(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_importar_legenda(dados: dict = Body(...), user: User = Depends(require_perm("legenda"))):
     """Importa uma lista 'código;nome' (uma por linha; aceita ; , ou tab). Para
     paradas, uma 3ª coluna opcional traz o tipo (parada, setup, planejada, producao)."""
     tipo = _tipo_valido(dados.get("tipo", "funcionario"))
@@ -371,7 +371,7 @@ URL_AGENTE = "https://github.com/Jeffersonjkcontrol/relatorios-iot/releases/down
 
 
 @router.get("/api/mes/cartoes/opcoes")
-def api_cartoes_opcoes(user: User = Depends(require_gestor)):
+def api_cartoes_opcoes(user: User = Depends(require_perm("cartoes"))):
     """O que dá para gravar: OPs abertas e a legenda de funcionários e paradas."""
     def legenda_de(tipo):
         return [{"codigo": c.codigo, "nome": c.nome, "classe": c.classe}
@@ -386,7 +386,7 @@ def api_cartoes_opcoes(user: User = Depends(require_gestor)):
 
 
 @router.post("/api/mes/cartoes/preparar")
-def api_cartao_preparar(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_cartao_preparar(dados: dict = Body(...), user: User = Depends(require_perm("cartoes"))):
     """Valida e devolve os blocos a gravar. Nome novo de funcionário/parada já
     entra na legenda."""
     try:
@@ -401,7 +401,7 @@ def api_cartao_preparar(dados: dict = Body(...), user: User = Depends(require_ge
 
 
 @router.post("/api/mes/cartoes/interpretar")
-def api_cartao_interpretar(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_cartao_interpretar(dados: dict = Body(...), user: User = Depends(require_perm("cartoes"))):
     """Traduz o que foi lido do cartão: tipo, conteúdo, nome na legenda e
     quando/por quem foi gravado aqui."""
     r = cartoes.interpretar(dados.get("blocos") or {})
@@ -415,7 +415,7 @@ def api_cartao_interpretar(dados: dict = Body(...), user: User = Depends(require
 
 
 @router.post("/api/mes/cartoes/historico")
-def api_cartao_registrar(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_cartao_registrar(dados: dict = Body(...), user: User = Depends(require_perm("cartoes"))):
     try:
         cartoes.registrar(dados.get("tipo", ""), dados.get("conteudo", ""), dados.get("uid", ""),
                           dados.get("nome", ""), user.username)
@@ -425,7 +425,7 @@ def api_cartao_registrar(dados: dict = Body(...), user: User = Depends(require_g
 
 
 @router.get("/api/mes/cartoes/historico")
-def api_cartao_historico(uid: str = "", user: User = Depends(require_gestor)):
+def api_cartao_historico(uid: str = "", user: User = Depends(require_perm("cartoes"))):
     return cartoes.historico(uid)
 
 
@@ -466,7 +466,7 @@ def api_excluir_webhook(webhook_id: int, user: User = Depends(require_gestor)):
 
 
 @router.post("/api/mes/ordens-csv")
-def api_importar_ordens(dados: dict = Body(...), user: User = Depends(require_gestor)):
+def api_importar_ordens(dados: dict = Body(...), user: User = Depends(require_perm("op_planejar"))):
     try:
         return integracao.importar_ordens_csv(dados.get("texto", ""), user.username)
     except ValueError as e:

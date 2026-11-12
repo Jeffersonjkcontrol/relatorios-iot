@@ -16,3 +16,6 @@ __all__ = [
     "create_session_cookie", "decode_session_cookie", "COOKIE_NAME",
     "current_user", "require_user", "require_gestor",
 ]
+
+from app.auth.permissoes import pode, require_perm, PAPEIS  # noqa: E402
+__all__ += ["pode", "require_perm", "PAPEIS"]

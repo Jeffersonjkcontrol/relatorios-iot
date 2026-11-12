@@ -41,6 +41,8 @@ ACOES: list[tuple[str, str, str]] = [
     ("POST", r"/perfil/senha", "Trocou a própria senha"),
     ("POST", r"/users", "Criou usuário"),
     ("POST", r"/users/(?P<id>\d+)/delete", "Excluiu usuário"),
+    ("POST", r"/users/permissoes", "Alterou as permissões dos papéis"),
+    ("POST", r"/users/(?P<id>\d+)/role", "Alterou o papel de um usuário"),
     ("POST", r"/users/(?P<id>\d+)/reset-password", "Redefiniu a senha de outro usuário"),
     ("POST", r"/admin/maintenance", "Alterou o modo manutenção"),
     ("POST", r"/admin/session-expiry", "Alterou a duração da sessão"),

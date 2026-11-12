@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-header">
   <h1>Usuários</h1>
-  <p>Gerencie quem tem acesso ao sistema. Apenas gestores podem criar/remover usuários.</p>
+  <p>Quem tem acesso ao sistema e o que cada papel pode fazer. Só o gestor gerencia usuários e permissões.</p>
 </div>
 
 {% if msg %}<div class="card" style="background: var(--success-soft); color: var(--success-text); border-color: var(--success);">{{ msg }}</div>{% endif %}
@@ -25,7 +25,15 @@
       {% for u in users %}
       <tr style="border-bottom: 1px solid var(--border);">
         <td style="padding: 10px;"><strong>{{ u.username }}</strong>{% if u.must_change_password %} <span class="badge">precisa trocar senha</span>{% endif %}</td>
-        <td style="padding: 10px;">{{ 'Gestor' if u.role == 'gestor' else 'Operador' }}</td>
+        <td style="padding: 10px;">
+          {% if u.id != current.id %}
+          <form method="post" action="/users/{{ u.id }}/role" style="display:inline;">
+            <select name="role" onchange="this.form.submit()" style="height:30px; font-size:var(--fs-sm);">
+              {% for k, rot in papeis.items() %}<option value="{{ k }}" {% if u.role == k %}selected{% endif %}>{{ rot }}</option>{% endfor %}
+            </select>
+          </form>
+          {% else %}{{ papeis.get(u.role, u.role) }}{% endif %}
+        </td>
         <td style="padding: 10px; color: var(--text-subtle); font-size: var(--fs-sm);">{{ u.created_at_fmt }}</td>
         <td style="padding: 10px; text-align: right; white-space: nowrap;">
           {% if u.id != current.id %}
@@ -58,7 +66,8 @@
       <label>
         Papel
         <select name="role" required>
-          <option value="operador">Operador (somente leitura)</option>
+          <option value="operador">Operador</option>
+          <option value="supervisor">Supervisor</option>
           <option value="gestor">Gestor (acesso total)</option>
         </select>
       </label>
@@ -66,6 +75,29 @@
     <div class="actions">
       <button type="submit" class="btn-primary">Criar usuário</button>
     </div>
+  </form>
+</div>
+
+<div class="card" id="permissoes">
+  <h2 style="margin: 0 0 var(--space-2); font-size: var(--fs-lg); font-weight: 600;">Permissões por papel</h2>
+  <p class="config-desc">Marque o que o Supervisor e o Operador podem fazer. O Gestor sempre tem acesso total.
+    Ficam sempre só com o Gestor: Admin (manutenção, reiniciar, backup, logs), usuários e permissões, coleta do MES,
+    integrações com ERP e conhecimento da IA. Vale na hora para todos os usuários do papel.</p>
+  <form method="post" action="/users/permissoes">
+    <table class="moldes-table">
+      <thead><tr><th>Permissão</th><th>O que permite</th>
+        {% for p in configuraveis %}<th style="text-align:center;">{{ papeis[p] }}</th>{% endfor %}
+        <th style="text-align:center;">Gestor</th></tr></thead>
+      <tbody>
+      {% for chave, (rotulo, desc) in catalogo.items() %}
+        <tr><td><strong>{{ rotulo }}</strong></td><td class="hint">{{ desc }}</td>
+          {% for p in configuraveis %}<td style="text-align:center;">
+            <input type="checkbox" name="{{ p }}" value="{{ chave }}" {% if chave in matriz[p] %}checked{% endif %} style="height:auto; width:18px;"></td>{% endfor %}
+          <td style="text-align:center; color:var(--success);">✓</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="actions"><button type="submit" class="btn-primary">Salvar permissões</button></div>
   </form>
 </div>
 

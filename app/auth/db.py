@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,14 +11,14 @@ import bcrypt
 
 from app.ai.db import get_conn  # mesmo banco
 
-VALID_ROLES = {"gestor", "operador"}
+VALID_ROLES = {"gestor", "supervisor", "operador"}
 
 
 @dataclass
 class User:
     id: int
     username: str
-    role: str  # 'gestor' | 'operador'
+    role: str  # 'gestor' | 'supervisor' | 'operador'
     must_change_password: bool
     created_at: float
 
@@ -29,11 +30,25 @@ def _init():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('gestor','operador')),
+            role TEXT NOT NULL CHECK(role IN ('gestor','supervisor','operador')),
             must_change_password INTEGER NOT NULL DEFAULT 0,
             created_at REAL NOT NULL
         )
         """)
+        # Bancos antigos: o CHECK só aceitava gestor/operador. O SQLite não altera
+        # CHECK, então a tabela é recriada com o mesmo SQL (preserva colunas extras).
+        sql = c.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").fetchone()[0]
+        if "supervisor" not in sql:
+            novo = re.sub(r"CHECK\s*\(\s*role\s+IN\s*\([^)]*\)\s*\)",
+                          "CHECK(role IN ('gestor','supervisor','operador'))", sql, flags=re.I)
+            novo = re.sub(r"^CREATE TABLE\s+\"?users\"?", "CREATE TABLE users_novo", novo, flags=re.I)
+            colunas = ", ".join(r["name"] for r in c.execute("PRAGMA table_info(users)"))
+            c.execute("BEGIN")
+            c.execute(novo)
+            c.execute(f"INSERT INTO users_novo ({colunas}) SELECT {colunas} FROM users")
+            c.execute("DROP TABLE users")
+            c.execute("ALTER TABLE users_novo RENAME TO users")
+            c.execute("COMMIT")
 
 
 def _row_to_user(row) -> User:

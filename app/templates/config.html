@@ -8,14 +8,14 @@
 </div>
 
 <div class="tabs" role="tablist">
-  <button class="tab active" data-aba="geral">Geral</button>
-  <button class="tab" data-aba="paradas">Códigos de parada</button>
-  <button class="tab" data-aba="funcionarios">Funcionários</button>
-  <button class="tab" data-aba="cartoes">Cartões RFID</button>
-  <button class="tab" data-aba="produtos">Produtos</button>
-  <button class="tab" data-aba="turnos">Turnos</button>
-  <button class="tab" data-aba="coleta">Coleta MES</button>
-  <button class="tab" data-aba="integracoes">Integrações</button>
+  {% if 'geral' in abas_config %}<button class="tab active" data-aba="geral">Geral</button>{% endif %}
+  {% if 'paradas' in abas_config %}<button class="tab" data-aba="paradas">Códigos de parada</button>{% endif %}
+  {% if 'funcionarios' in abas_config %}<button class="tab" data-aba="funcionarios">Funcionários</button>{% endif %}
+  {% if 'cartoes' in abas_config %}<button class="tab" data-aba="cartoes">Cartões RFID</button>{% endif %}
+  {% if 'produtos' in abas_config %}<button class="tab" data-aba="produtos">Produtos</button>{% endif %}
+  {% if 'turnos' in abas_config %}<button class="tab" data-aba="turnos">Turnos</button>{% endif %}
+  {% if 'coleta' in abas_config %}<button class="tab" data-aba="coleta">Coleta MES</button>{% endif %}
+  {% if 'integracoes' in abas_config %}<button class="tab" data-aba="integracoes">Integrações</button>{% endif %}
 </div>
 
 <section class="aba" id="aba-geral">
@@ -292,7 +292,7 @@
   /* ---------- abas ---------- */
   const ABA_TIPO = {paradas: 'motivo', funcionarios: 'funcionario'};
   function mostrar(nome) {
-    if (!$('aba-' + nome)) nome = 'geral';
+    if (!$('aba-' + nome) || !ABAS_PERMITIDAS.includes(nome)) nome = ABAS_PERMITIDAS[0];
     history.replaceState(null, '', '#' + nome);
     document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.aba === nome));
     document.querySelectorAll('.aba').forEach(s => s.classList.toggle('hidden', s.id !== 'aba-' + nome));
@@ -623,6 +623,7 @@
       integracoes();
     } catch (e) { $('csv-msg').textContent = 'Erro: ' + e.message; }
   };
-  mostrar(location.hash.slice(1) || 'geral');
+  const ABAS_PERMITIDAS = {{ abas_config | tojson }};
+  mostrar(ABAS_PERMITIDAS.includes(location.hash.slice(1)) ? location.hash.slice(1) : ABAS_PERMITIDAS[0]);
 </script>
 {% endblock %}

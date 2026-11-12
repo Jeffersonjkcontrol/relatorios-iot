@@ -26,13 +26,15 @@
       <a class="nav-link {% if current_page == 'oee' %}active{% endif %}" href="/oee">OEE</a>
       <a class="nav-link {% if current_page == 'paradas' %}active{% endif %}" href="/paradas">Paradas</a>
       <a class="nav-link {% if current_page == 'moldes' %}active{% endif %}" href="/moldes">Moldes</a>
-      <a class="nav-link {% if current_page == 'ai' %}active{% endif %}" href="/ai">IA</a>
+      {% if pode.ia %}<a class="nav-link {% if current_page == 'ai' %}active{% endif %}" href="/ai">IA</a>{% endif %}
+      {% if pode.legenda %}<a class="nav-link {% if current_page == 'cadastros' %}active{% endif %}" href="/cadastros">Cadastros</a>{% endif %}
       {% if current_user and current_user.role == 'gestor' %}
-      <a class="nav-link {% if current_page == 'cadastros' %}active{% endif %}" href="/cadastros">Cadastros</a>
       <a class="nav-link {% if current_page == 'users' %}active{% endif %}" href="/users">Usuários</a>
       <a class="nav-link {% if current_page == 'admin' %}active{% endif %}" href="/admin">Admin</a>
-      <a class="nav-link {% if current_page == 'config' %}active{% endif %}" href="/config">Configurações</a>
+      {% elif pode.auditoria %}
+      <a class="nav-link {% if current_page == 'admin' %}active{% endif %}" href="/admin/auditoria">Auditoria</a>
       {% endif %}
+      {% if abas_config %}<a class="nav-link {% if current_page == 'config' %}active{% endif %}" href="/config">Configurações</a>{% endif %}
     </nav>
 
     <div class="topbar-actions">
@@ -43,7 +45,7 @@
       {% if current_user %}
       <a class="user-pill" href="/perfil" title="Meu perfil — trocar senha">
         <strong>{{ current_user.username }}</strong>
-        <span class="user-role">{{ 'G' if current_user.role == 'gestor' else 'O' }}</span>
+        <span class="user-role" title="{{ papeis.get(current_user.role, current_user.role) }}">{{ papeis.get(current_user.role, '?')[0] }}</span>
       </a>
       <a class="icon-btn" href="/logout" title="Sair" aria-label="Sair">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
