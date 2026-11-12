@@ -48,6 +48,16 @@ def get_maintenance_msg() -> str:
     return _get("maintenance_msg", "Sistema em manutenção. Volte em alguns minutos.")
 
 
+def modulo_moldes() -> bool:
+    """Página Moldes: só faz sentido quando o firmware envia o molde no contexto
+    dos ciclos (ex.: Injequaly). Desligada por padrão."""
+    return _get("modulo_moldes", "0") == "1"
+
+
+def set_modulo_moldes(ativo: bool) -> None:
+    _set("modulo_moldes", "1" if ativo else "0")
+
+
 def get_session_max_age_days() -> int:
     try:
         return int(_get("session_max_age_days", "7"))

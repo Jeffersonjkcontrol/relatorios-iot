@@ -25,7 +25,7 @@
       <a class="nav-link {% if current_page == 'relatorios' %}active{% endif %}" href="/">Relatórios</a>
       <a class="nav-link {% if current_page == 'oee' %}active{% endif %}" href="/oee">OEE</a>
       <a class="nav-link {% if current_page == 'paradas' %}active{% endif %}" href="/paradas">Paradas</a>
-      <a class="nav-link {% if current_page == 'moldes' %}active{% endif %}" href="/moldes">Moldes</a>
+      {% if modulo_moldes %}<a class="nav-link {% if current_page == 'moldes' %}active{% endif %}" href="/moldes">Moldes</a>{% endif %}
       {% if pode.ia %}<a class="nav-link {% if current_page == 'ai' %}active{% endif %}" href="/ai">IA</a>{% endif %}
       {% if pode.legenda %}<a class="nav-link {% if current_page == 'cadastros' %}active{% endif %}" href="/cadastros">Cadastros</a>{% endif %}
       {% if current_user and current_user.role == 'gestor' %}

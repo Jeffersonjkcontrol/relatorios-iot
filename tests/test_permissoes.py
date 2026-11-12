@@ -112,3 +112,17 @@ def test_regras_valem_no_servidor(cliente, banco):
     from app import auditoria
     recusas = [a["acao"] for a in auditoria.listar(so_falhas=True)]
     assert "Criou ordem de produção" in recusas and "Alterou as permissões dos papéis" in recusas
+
+
+def test_pagina_moldes_liga_e_desliga(cliente, banco):
+    como(cliente, "gest")
+    assert 'href="/moldes"' not in cliente.get("/mes").text                      # desligada por padrão
+    assert cliente.get("/moldes", follow_redirects=False).headers["location"] == "/mes"
+    cliente.post("/config/modulos", data={"moldes": "1"}, follow_redirects=False)
+    assert 'href="/moldes"' in cliente.get("/mes").text
+    assert cliente.get("/moldes", follow_redirects=False).status_code == 200
+    como(cliente, "supe")
+    assert cliente.post("/config/modulos", data={"moldes": "0"}).status_code == 403   # só gestor
+    como(cliente, "gest")
+    cliente.post("/config/modulos", data={}, follow_redirects=False)                 # caixa desmarcada
+    assert 'href="/moldes"' not in cliente.get("/mes").text

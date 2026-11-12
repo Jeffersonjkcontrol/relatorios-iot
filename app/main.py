@@ -95,6 +95,11 @@ def _client(platform_id: str) -> PlatformClient:
 _VERSAO_ESTATICOS = int(max(f.stat().st_mtime for f in (BASE_DIR / "static").iterdir() if f.is_file()))
 
 
+def _modulo_moldes() -> bool:
+    from app.admin.settings import modulo_moldes
+    return modulo_moldes()
+
+
 def tctx(request: Request, **extra) -> dict:
     """Contexto-base para todas as templates: inclui current_user e platforms."""
     from app.auth import permissoes as _perm
@@ -105,6 +110,7 @@ def tctx(request: Request, **extra) -> dict:
         "pode": _perm.do_usuario(usuario),           # {permissão: bool} para o menu e as telas
         "abas_config": _perm.abas_config(usuario),
         "papeis": _perm.PAPEIS,
+        "modulo_moldes": _modulo_moldes(),
         "platforms": PLATFORMS,
         "year": datetime.now().year,
         "v": _VERSAO_ESTATICOS,     # muda a cada atualização: o navegador não reusa CSS/JS antigos
@@ -625,7 +631,16 @@ async def api_platform_display(platform: str):
 
 @app.get("/moldes", response_class=HTMLResponse)
 async def page_moldes(request: Request):
+    if not _modulo_moldes():
+        return RedirectResponse(url="/mes", status_code=303)
     return templates.TemplateResponse("moldes.html", tctx(request, current_page="moldes"))
+
+
+@app.post("/config/modulos")
+async def salvar_modulos(moldes: str = Form("0"), user: User = Depends(require_gestor)):
+    from app.admin.settings import set_modulo_moldes
+    set_modulo_moldes(moldes == "1")
+    return RedirectResponse(url="/config#geral", status_code=303)
 
 
 @app.get("/api/moldes")

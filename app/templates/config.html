@@ -20,6 +20,16 @@
 
 <section class="aba" id="aba-geral">
 <div class="card">
+  <h2 class="card-titulo">Módulos</h2>
+  <form method="post" action="/config/modulos" style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap;">
+    <label style="flex-direction:row; align-items:center; gap:8px; font-weight:500;">
+      <input type="checkbox" name="moldes" value="1" {% if modulo_moldes %}checked{% endif %} style="height:auto;" onchange="this.form.submit()">
+      Página Moldes</label>
+    <span class="hint">Análise por molde. Só use se o firmware das máquinas envia o molde junto com o ciclo (ex.: "Tampa|#89-0001|#30seg"); sem isso a página fica vazia.</span>
+  </form>
+</div>
+
+<div class="card">
   <h2 class="card-titulo">Plataforma</h2>
   <p class="config-desc">Escolha qual backend será consultado. A seleção fica salva neste navegador.</p>
   <label>

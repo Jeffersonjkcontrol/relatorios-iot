@@ -49,6 +49,7 @@ ACOES: list[tuple[str, str, str]] = [
     ("POST", r"/admin/restart", "Reiniciou o sistema"),
     ("POST", r"/admin/backup", "Executou backup"),
     ("POST", r"/admin/ia", "Editou o conhecimento da IA"),
+    ("POST", r"/config/modulos", "Ligou/desligou a página Moldes"),
     ("POST", r"/cadastros", "Cadastrou código RFID"),
     ("POST", r"/cadastros/(?P<id>\d+)/delete", "Excluiu código RFID"),
     ("POST", r"/relatorio", "Gerou relatório de variável"),
