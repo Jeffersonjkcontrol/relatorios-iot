@@ -379,7 +379,7 @@ def api_cartoes_opcoes(user: User = Depends(require_gestor)):
     ops = ordens.listar(status=list(ordens.ABERTAS), limite=500)
     return {
         "tipos": {k: v["rotulo"] for k, v in cartoes.TIPOS.items()},
-        "ops": [{"codigo": o["numero"], "nome": o["produto_descricao"] or o["status_rotulo"]} for o in ops],
+        "ops": [{"codigo": o["numero"], "nome": o["produto_descricao"] or ""} for o in ops],
         "funcionario": legenda_de("funcionario"), "parada": legenda_de("motivo"),
         "url_agente": URL_AGENTE,
     }
@@ -409,7 +409,7 @@ def api_cartao_interpretar(dados: dict = Body(...), user: User = Depends(require
     r["nome"] = legenda.resolve_map(mapa).get(r["conteudo"]) if mapa else None
     if r["tipo"] == "op":
         o = ordens.obter_por_numero(r["conteudo"])
-        r["nome"] = (o["produto_descricao"] or o["status_rotulo"]) if o else "OP não cadastrada no MES"
+        r["nome"] = (o["produto_descricao"] or f"sem produto cadastrado · {o['status_rotulo'].lower()}") if o else "OP ainda não vista no MES"
     r["gravacoes"] = cartoes.historico(uid=str(dados.get("uid") or ""), limite=5) if dados.get("uid") else []
     return r
 
