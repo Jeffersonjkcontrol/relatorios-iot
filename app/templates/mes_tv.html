@@ -27,8 +27,9 @@
     .maq.parada { border-left-color: var(--parada); background: #2a1215; }
     .maq.ociosa { border-left-color: var(--ociosa); }
     .maq .topo { display: flex; justify-content: space-between; align-items: baseline; gap: .5vw; }
-    .maq .nome { font-size: 1.9vw; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .maq .estado { font-size: .9vw; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+    .maq .nome { font-size: 1.9vw; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+    .maq .estado { font-size: .9vw; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap;
+                   min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .produzindo .estado { color: var(--ok); } .parada .estado { color: var(--parada); }
     .ociosa .estado { color: var(--ociosa); } .sem_dados .estado { color: var(--semdados); }
     .maq .meio { font-size: 1.05vw; color: var(--suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -87,9 +88,10 @@
     const paginas = Math.max(1, Math.ceil(maquinas.length / POR_PAGINA));
     if (pagina >= paginas) pagina = 0;
     const lista = maquinas.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA);
-    const colunas = Math.ceil(Math.sqrt(lista.length * 1.6)) || 1;
+    const cheia = Math.min(POR_PAGINA, maquinas.length) || 1;
+    const colunas = Math.ceil(Math.sqrt(cheia * 1.6));
     $('grade').style.gridTemplateColumns = `repeat(${colunas}, 1fr)`;
-    $('grade').style.gridTemplateRows = `repeat(${Math.ceil(lista.length / colunas) || 1}, 1fr)`;
+    $('grade').style.gridTemplateRows = `repeat(${Math.ceil(cheia / colunas)}, 1fr)`;
     $('grade').innerHTML = lista.map(m => {
       const op = m.op, p = m.parada;
       const meio = p ? `<strong>${esc(p.nome)}</strong> · há ${dur(p.duracao_s)}`
