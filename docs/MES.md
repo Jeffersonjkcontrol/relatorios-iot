@@ -152,6 +152,45 @@ um QR code que abre essa página.
 
 ---
 
+## 6a. Saúde da contagem
+
+**Fábrica → Saúde da contagem** responde: a máquina está contando tudo o que produz?
+
+Compara duas medidas independentes do mesmo dispositivo: as **peças do
+totalizador** e as **leituras de ciclo**. Cada leitura publicada vale N ciclos da
+máquina (2 no firmware da Nitron; ajustável em `ciclos_por_publicacao`) e cada
+ciclo vale `cavidades` peças. Então:
+
+```
+contado ÷ esperado = peças ÷ (leituras × N × cavidades)
+```
+
+| Resultado | Situação |
+|---|---|
+| ≥ 90% | Contando certo |
+| 70–90% | Atenção |
+| < 70% | Subcontando — o totalizador está perdendo peças |
+| esperado < 50 peças | Pouca produção para julgar |
+
+Ciclos feitos com a **contagem bloqueada** (`cont_bloq = 1`, ex.: cartão de setup)
+saem do esperado — não contar ali é proposital. A tabela também mostra os
+reinícios do dispositivo e a causa (`reset_reason`: queda de tensão, watchdog...).
+
+## 6b. Tela de TV
+
+`/mes/tv` — para deixar numa TV no chão de fábrica: tela cheia, letras grandes,
+máquinas paradas primeiro, atualiza a cada 15 s e alterna as telas sozinha.
+Abre também pelo link **Abrir tela de TV** na página Fábrica.
+
+- `?porpagina=24` — máquinas por tela (padrão 24)
+- `?troca=15` — segundos por tela (padrão 15)
+
+Exige login: entre uma vez no navegador da TV com um usuário só de consulta
+(papel **operador**). O prefixo comum dos nomes ("Nitron inj01" → "inj01") é
+omitido para o número ficar legível de longe.
+
+---
+
 ## 7. Integração com ERP
 
 ### CSV

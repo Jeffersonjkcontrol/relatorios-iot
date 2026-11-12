@@ -43,6 +43,7 @@ PADROES: dict[str, str] = {
     "auto_iniciar_op": "1",          # OP liberada inicia quando o molde dela começa a ciclar
     "auto_concluir_na_troca": "1",   # OP substituída na máquina com a meta batida é concluída
     "auto_concluir_dias": "7",       # OP pausada sem produção há N dias é encerrada (0 = nunca)
+    "ciclos_por_publicacao": "2",    # o firmware publica 1 leitura de ciclo a cada N ciclos da máquina
     "ocioso_min": "3",               # sem ciclo há N minutos (e sem parada) = ociosa
 }
 
@@ -73,6 +74,7 @@ DESCRICOES: dict[str, str] = {
     "var_qualidade": "Cartão da qualidade",
     "var_bloqueio": "Contagem bloqueada",
     "var_reinicio": "Reinício do dispositivo",
+    "ciclos_por_publicacao": "Ciclos da máquina por leitura de ciclo publicada",
     "ctx_op": "Chave do contexto com o nº da OP",
     "ctx_molde": "Chave do contexto com o molde",
 }

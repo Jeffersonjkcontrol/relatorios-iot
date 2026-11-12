@@ -28,6 +28,8 @@
   <button class="tab" data-aba="oee">OEE</button>
   <button class="tab" data-aba="ordens">Ordens</button>
   <button class="tab" data-aba="rastreabilidade">Rastreabilidade</button>
+  <button class="tab" data-aba="saude">Saúde da contagem</button>
+  <a class="tab" href="/mes/tv" target="_blank" style="margin-left:auto; text-decoration:none; display:inline-flex; align-items:center;">Abrir tela de TV ↗</a>
 </div>
 
 <section class="aba" id="aba-geral">
@@ -97,6 +99,19 @@
       <th>OP</th><th>Produto</th><th>Máquina</th><th class="num">Boas</th><th class="num">Planejado</th>
       <th style="min-width:140px;">Progresso</th><th>Origem</th><th></th>
     </tr></thead><tbody id="tab-ordens"></tbody></table></div>
+  </div>
+</section>
+
+<section class="aba hidden" id="aba-saude">
+  <div class="stats-grid" id="saude-kpis"></div>
+  <div class="card">
+    <h2 class="card-titulo">A máquina está contando tudo o que produz?</h2>
+    <p class="config-desc" id="saude-dica"></p>
+    <div class="table-wrap" style="max-height:640px;"><table class="moldes-table"><thead><tr>
+      <th>Máquina</th><th>Situação</th><th style="min-width:150px;">Contado ÷ esperado</th><th class="num">Peças contadas</th>
+      <th class="num">Esperado pelos ciclos</th><th class="num">Diferença</th><th class="num">Reinícios</th>
+      <th class="num">Contagem bloqueada</th>
+    </tr></thead><tbody id="tab-saude"></tbody></table></div>
   </div>
 </section>
 
@@ -408,6 +423,27 @@ $('form-op').onsubmit = async ev => {
   } catch (e) { $('dlg-erro').textContent = e.message; }
 };
 
+/* ---------------- saúde da contagem ---------------- */
+const SITUACAO = {ok: ['Contando certo', ''], atencao: ['Atenção', 'chip-alerta'], subcontando: ['Subcontando', 'chip-critico'], sem_base: ['Pouca produção', '']};
+async function saude() {
+  const d = await jget('/api/mes/saude?' + q()), g = d.geral;
+  $('saude-kpis').innerHTML = stat('Contado ÷ esperado', pct(g.razao)) + stat('Subcontando', g.subcontando) + stat('Em atenção', g.atencao) +
+    stat('Contando certo', g.ok) + stat('Peças que faltam', num(g.faltando)) + stat('Reinícios', num(g.reinicios)) +
+    stat('Ciclos sem contar (bloqueio)', num(g.ciclos_bloqueados));
+  $('saude-dica').textContent = `Compara as peças do totalizador com as leituras de ciclo do mesmo dispositivo. Cada leitura vale ${String(d.fator).replace('.', ',')} ciclo(s) × cavidades. Perto de 100% a contagem está íntegra; abaixo de 90% o totalizador está perdendo peças.`;
+  $('tab-saude').innerHTML = d.maquinas.map(m => {
+    const [rot, cls] = SITUACAO[m.situacao], larg = m.razao == null ? 0 : Math.min(100, m.razao * 100);
+    const causas = Object.entries(m.causas).map(([k, v]) => `${v}× ${k}`).join(', ');
+    return `<tr><td><strong>${esc(m.nome)}</strong></td><td><span class="chip ${cls}">${rot}</span></td>
+      <td title="${pct(m.razao)}"><div style="display:flex; align-items:center; gap:8px;"><div class="prog" style="flex:1; margin:0;"><i style="width:${larg}%"></i></div>
+        <span class="num" style="width:52px; text-align:right;">${pct(m.razao)}</span></div></td>
+      <td class="num">${num(m.pecas)}</td><td class="num">${num(m.esperado)}</td>
+      <td class="num">${m.faltando ? '−' + num(m.faltando) : '—'}</td>
+      <td class="num" title="${esc(causas)}">${m.reinicios || '—'}</td>
+      <td class="num">${m.bloqueado_s ? dur(m.bloqueado_s) + ' · ' + num(m.ciclos_bloqueados) + ' ciclos' : '—'}</td></tr>`;
+  }).join('');
+}
+
 /* ---------------- rastreabilidade ---------------- */
 async function lotes() {
   const d = await jget(`/api/mes/lotes?busca=${encodeURIComponent($('r-busca').value)}&dia=${$('r-dia').value}`);
@@ -465,7 +501,7 @@ $('r-btn').onclick = lotes;
 $('r-busca').onkeydown = ev => { if (ev.key === 'Enter') lotes(); };
 
 /* ---------------- ciclo de atualização ---------------- */
-const ABAS = {geral, producao, paradas, oee, ordens: ordensAba, rastreabilidade: lotes};
+const ABAS = {geral, producao, paradas, oee, ordens: ordensAba, rastreabilidade: lotes, saude};
 async function carregar() {
   try { await ABAS[aba](); } catch (e) { $('mes-aviso').innerHTML = `<div class="card warnings">${esc(e.message)}</div>`; }
 }

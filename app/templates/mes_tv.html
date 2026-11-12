@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fábrica · TV</title>
+  <style>
+    /* Tela para TV de chão de fábrica: lida de longe, sem interação. */
+    :root { --fundo: #0b1120; --cartao: #111827; --borda: #1f2937; --texto: #f1f5f9; --suave: #94a3b8;
+            --ok: #34d399; --parada: #f87171; --ociosa: #fbbf24; --semdados: #64748b; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--fundo); color: var(--texto);
+                 font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; overflow: hidden; }
+    body { display: flex; flex-direction: column; padding: 1.2vw; gap: 1vw; }
+    header { display: flex; align-items: center; gap: 2vw; }
+    header h1 { margin: 0; font-size: 2.2vw; font-weight: 700; }
+    .kpis { display: flex; gap: 1vw; margin-left: auto; }
+    .kpi { background: var(--cartao); border: 1px solid var(--borda); border-radius: .6vw; padding: .5vw 1.2vw; text-align: center; min-width: 9vw; }
+    .kpi b { display: block; font-size: 2.4vw; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .kpi span { font-size: .85vw; color: var(--suave); text-transform: uppercase; letter-spacing: .06em; }
+    .kpi.ok b { color: var(--ok); } .kpi.parada b { color: var(--parada); } .kpi.ociosa b { color: var(--ociosa); }
+    #relogio { font-size: 2.2vw; font-variant-numeric: tabular-nums; color: var(--suave); }
+    #grade { flex: 1; display: grid; gap: .8vw; min-height: 0; }
+    .maq { background: var(--cartao); border: 1px solid var(--borda); border-left: .6vw solid var(--semdados); border-radius: .6vw;
+           padding: .6vw .9vw; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; overflow: hidden; }
+    .maq.produzindo { border-left-color: var(--ok); }
+    .maq.parada { border-left-color: var(--parada); background: #2a1215; }
+    .maq.ociosa { border-left-color: var(--ociosa); }
+    .maq .topo { display: flex; justify-content: space-between; align-items: baseline; gap: .5vw; }
+    .maq .nome { font-size: 1.9vw; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .maq .estado { font-size: .9vw; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+    .produzindo .estado { color: var(--ok); } .parada .estado { color: var(--parada); }
+    .ociosa .estado { color: var(--ociosa); } .sem_dados .estado { color: var(--semdados); }
+    .maq .meio { font-size: 1.05vw; color: var(--suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .maq .meio strong { color: var(--texto); }
+    .maq .base { display: flex; justify-content: space-between; align-items: baseline; font-variant-numeric: tabular-nums; }
+    .maq .ciclo { font-size: 1.9vw; font-weight: 700; }
+    .maq .ciclo small { font-size: .9vw; color: var(--suave); font-weight: 400; }
+    .maq .pecas { font-size: 1.05vw; color: var(--suave); }
+    .barra { height: .35vw; background: var(--borda); border-radius: 1vw; overflow: hidden; }
+    .barra i { display: block; height: 100%; background: var(--ok); }
+    footer { display: flex; justify-content: space-between; font-size: .85vw; color: var(--suave); }
+    #aviso { color: var(--parada); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="titulo">Fábrica</h1>
+    <div class="kpis">
+      <div class="kpi ok"><b id="k-prod">—</b><span>Produzindo</span></div>
+      <div class="kpi parada"><b id="k-par">—</b><span>Paradas</span></div>
+      <div class="kpi ociosa"><b id="k-oci">—</b><span>Ociosas</span></div>
+      <div class="kpi"><b id="k-pecas">—</b><span>Peças hoje</span></div>
+      <div class="kpi"><b id="k-oee">—</b><span>OEE hoje</span></div>
+    </div>
+    <div id="relogio"></div>
+  </header>
+  <div id="grade"></div>
+  <footer><span id="pagina"></span><span id="aviso"></span><span id="atualizado"></span></footer>
+
+<script>
+  // ?porpagina=24 muda quantas máquinas cabem por tela; ?troca=15 os segundos por página
+  const params = new URLSearchParams(location.search);
+  const POR_PAGINA = Math.max(4, parseInt(params.get('porpagina')) || 24);
+  const TROCA_S = Math.max(5, parseInt(params.get('troca')) || 15);
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const num = n => Number(n || 0).toLocaleString('pt-BR');
+  const ROTULO = {produzindo: 'Produzindo', parada: 'Parada', ociosa: 'Ociosa', sem_dados: 'Sem dados'};
+  const ORDEM = {parada: 0, ociosa: 1, produzindo: 2, sem_dados: 3};
+  let maquinas = [], pagina = 0, prefixo = '';
+
+  // "Nitron inj01", "Nitron inj02"... -> "inj01": de longe, o que importa é o número
+  function prefixoComum(nomes) {
+    if (nomes.length < 2) return '';
+    const palavras = nomes[0].split(' ');
+    let n = 0;
+    while (n < palavras.length - 1 && nomes.every(x => x.split(' ')[n] === palavras[n])) n++;
+    return n ? palavras.slice(0, n).join(' ') + ' ' : '';
+  }
+
+  function dur(s) {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h ? `${h}h${String(m).padStart(2, '0')}` : `${m} min`;
+  }
+  function desenhar() {
+    const paginas = Math.max(1, Math.ceil(maquinas.length / POR_PAGINA));
+    if (pagina >= paginas) pagina = 0;
+    const lista = maquinas.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA);
+    const colunas = Math.ceil(Math.sqrt(lista.length * 1.6)) || 1;
+    $('grade').style.gridTemplateColumns = `repeat(${colunas}, 1fr)`;
+    $('grade').style.gridTemplateRows = `repeat(${Math.ceil(lista.length / colunas) || 1}, 1fr)`;
+    $('grade').innerHTML = lista.map(m => {
+      const op = m.op, p = m.parada;
+      const meio = p ? `<strong>${esc(p.nome)}</strong> · há ${dur(p.duracao_s)}`
+                     : op ? `OP <strong>${esc(op.numero)}</strong>${op.produto ? ' · ' + esc(op.produto) : ''}` : 'sem OP';
+      return `<div class="maq ${m.status}">
+        <div class="topo"><span class="nome">${esc(m.nome.slice(prefixo.length) || m.nome)}</span><span class="estado">${ROTULO[m.status]}</span></div>
+        <div class="meio">${meio}</div>
+        ${op && op.pct != null ? `<div class="barra"><i style="width:${op.pct}%"></i></div>` : ''}
+        <div class="base"><span class="ciclo">${m.ciclo_s == null ? '—' : m.ciclo_s.toFixed(1).replace('.', ',')}<small> s</small></span>
+          <span class="pecas">${num(m.pecas_dia)} peças</span></div></div>`;
+    }).join('');
+    $('pagina').textContent = paginas > 1 ? `Tela ${pagina + 1} de ${paginas}` : '';
+  }
+  async function atualizar() {
+    try {
+      const [ms, r] = await Promise.all([fetch('/api/mes/maquinas'), fetch('/api/mes/resumo?periodo=hoje')]);
+      if (ms.status === 401) { location.href = '/login?next=/mes/tv'; return; }
+      maquinas = (await ms.json()).sort((a, b) => ORDEM[a.status] - ORDEM[b.status] || a.nome.localeCompare(b.nome, 'pt-BR', {numeric: true}));
+      const d = await r.json();
+      prefixo = prefixoComum(maquinas.map(m => m.nome));
+      $('titulo').textContent = prefixo ? 'Fábrica · ' + prefixo.trim() : 'Fábrica';
+      $('k-prod').textContent = d.maquinas.produzindo; $('k-par').textContent = d.maquinas.parada;
+      $('k-oci').textContent = d.maquinas.ociosa; $('k-pecas').textContent = num(d.oee.pecas);
+      $('k-oee').textContent = d.oee.oee == null ? '—' : Math.round(d.oee.oee * 100) + '%';
+      $('atualizado').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
+      $('aviso').textContent = '';
+      desenhar();
+    } catch { $('aviso').textContent = 'Sem conexão com o servidor — tentando de novo…'; }
+  }
+  setInterval(() => { $('relogio').textContent = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}); }, 1000);
+  setInterval(atualizar, 15000);
+  setInterval(() => { pagina++; desenhar(); }, TROCA_S * 1000);
+  atualizar();
+</script>
+</body>
+</html>

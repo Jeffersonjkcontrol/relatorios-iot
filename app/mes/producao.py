@@ -331,6 +331,107 @@ def oee(ini_ms: int, fim_ms: int, maquina_id: int | None = None) -> dict:
     }
 
 
+# ---------------------------------------------------------- saúde da contagem
+RESET = {1: "energia ligada", 3: "reinício por software", 4: "falha de software", 5: "watchdog",
+         6: "watchdog", 7: "watchdog", 9: "queda de tensão"}
+
+
+def saude_contagem(ini_ms: int, fim_ms: int) -> dict:
+    """A máquina está contando tudo o que produz?
+
+    Compara duas medidas independentes do mesmo dispositivo: as PEÇAS do
+    totalizador e as LEITURAS de ciclo. Cada leitura publicada vale N ciclos da
+    máquina (2 no firmware atual), e cada ciclo vale `cavidades` peças — então
+    peças ÷ (leituras × N × cavidades) deveria dar ~100%. Bem abaixo disso, o
+    totalizador está perdendo contagem (reinícios, contagem bloqueada).
+    """
+    ate = min(fim_ms, agora_ms())
+    fator = max(0.1, float(config.get("ciclos_por_publicacao") or 1))
+    with get_conn() as c:
+        maquinas = c.execute("SELECT * FROM maquinas WHERE ativo = 1 ORDER BY nome COLLATE NOCASE").fetchall()
+        pecas = {r[0]: r[1] for r in c.execute(
+            "SELECT maquina_id, SUM(pecas) FROM contagens WHERE ref_ms >= ? AND ref_ms < ? GROUP BY maquina_id",
+            (ini_ms, ate))}
+        leituras = {r[0]: r[1] for r in c.execute(
+            "SELECT maquina_id, COUNT(*) FROM ciclos WHERE ts_ms >= ? AND ts_ms < ? GROUP BY maquina_id",
+            (ini_ms, ate))}
+        cav = {r[0]: r[1] for r in c.execute(
+            "SELECT s.maquina_id, s.valor FROM sinais s JOIN (SELECT maquina_id, MAX(ts_ms) AS t FROM sinais "
+            "WHERE variavel = 'cavidade' GROUP BY maquina_id) u ON u.maquina_id = s.maquina_id AND u.t = s.ts_ms "
+            "WHERE s.variavel = 'cavidade'")}
+        reinicios: dict[int, dict[str, int]] = {}
+        for r in c.execute("SELECT maquina_id, valor FROM sinais WHERE variavel = 'reinicio' AND ts_ms >= ? "
+                           "AND ts_ms < ?", (ini_ms, ate)):
+            causa = RESET.get(int(r["valor"] or 0), f"código {int(r['valor'] or 0)}")
+            d = reinicios.setdefault(r["maquina_id"], {})
+            d[causa] = d.get(causa, 0) + 1
+        bloqueios = c.execute(
+            "SELECT maquina_id, ts_ms, valor FROM sinais WHERE variavel = 'bloqueio' AND ts_ms < ? "
+            "ORDER BY maquina_id, ts_ms", (ate,)).fetchall()
+        ciclos_ts: dict[int, list[int]] = {}
+        for r in c.execute("SELECT maquina_id, ts_ms FROM ciclos WHERE ts_ms >= ? AND ts_ms < ?", (ini_ms, ate)):
+            ciclos_ts.setdefault(r["maquina_id"], []).append(r["ts_ms"])
+
+    # intervalos em que o dispositivo ficou com a contagem bloqueada, recortados no período
+    bloqueado: dict[int, list[tuple[int, int]]] = {}
+    aberto: dict[int, int] = {}
+    for r in bloqueios:
+        mid = r["maquina_id"]
+        if (r["valor"] or 0) >= 0.5:
+            aberto.setdefault(mid, r["ts_ms"])
+        elif mid in aberto:
+            ini = aberto.pop(mid)
+            if r["ts_ms"] > ini_ms:
+                bloqueado.setdefault(mid, []).append((max(ini, ini_ms), r["ts_ms"]))
+    for mid, ini in aberto.items():
+        bloqueado.setdefault(mid, []).append((max(ini, ini_ms), ate))
+
+    out, tot_pecas, tot_esperado = [], 0, 0.0
+    for m in maquinas:
+        mid = m["id"]
+        n = int(round(cav.get(mid) or m["cavidades_padrao"] or 1)) or 1
+        intervalos = bloqueado.get(mid, [])
+        ts = ciclos_ts.get(mid, [])
+        # leituras feitas com a contagem bloqueada não eram para contar: saem do esperado
+        sem_contar = sum(1 for t in ts if any(a <= t < b for a, b in intervalos))
+        lidas = leituras.get(mid, 0)
+        esperado = (lidas - sem_contar) * fator * n
+        p = pecas.get(mid, 0) or 0
+        razao = p / esperado if esperado >= 50 else None      # pouca produção: não dá para julgar
+        if razao is None:
+            situacao = "sem_base"
+        elif razao >= 0.9:
+            situacao = "ok"
+        elif razao >= 0.7:
+            situacao = "atencao"
+        else:
+            situacao = "subcontando"
+        rei = reinicios.get(mid, {})
+        out.append({
+            "id": mid, "nome": m["nome"], "pecas": p, "leituras": lidas, "esperado": round(esperado),
+            "razao": razao, "situacao": situacao, "cavidades": n,
+            "faltando": max(0, round(esperado - p)) if razao is not None else 0,
+            "reinicios": sum(rei.values()), "causas": rei,
+            "bloqueado_s": round(sum(b - a for a, b in intervalos) / 1000), "ciclos_bloqueados": round(sem_contar * fator),
+        })
+        if razao is not None:
+            tot_pecas += p
+            tot_esperado += esperado
+    ordem = {"subcontando": 0, "atencao": 1, "ok": 2, "sem_base": 3}
+    out.sort(key=lambda i: (ordem[i["situacao"]], i["razao"] if i["razao"] is not None else 9))
+    return {
+        "fator": fator,
+        "geral": {"razao": tot_pecas / tot_esperado if tot_esperado else None,
+                  "subcontando": sum(1 for i in out if i["situacao"] == "subcontando"),
+                  "atencao": sum(1 for i in out if i["situacao"] == "atencao"),
+                  "ok": sum(1 for i in out if i["situacao"] == "ok"),
+                  "faltando": sum(i["faltando"] for i in out),
+                  "reinicios": sum(i["reinicios"] for i in out),
+                  "ciclos_bloqueados": sum(i["ciclos_bloqueados"] for i in out)},
+        "maquinas": out,
+    }
+
+
 def resumo(ini_ms: int, fim_ms: int) -> dict:
     """Números do topo do painel."""
     estados = estado_maquinas()

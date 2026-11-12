@@ -36,6 +36,10 @@ def registrar_paginas(app, templates, tctx) -> None:
     async def pagina_mes(request: Request):
         return templates.TemplateResponse("mes.html", tctx(request, current_page="mes"))
 
+    @app.get("/mes/tv", response_class=HTMLResponse)
+    async def pagina_tv(request: Request):
+        return templates.TemplateResponse("mes_tv.html", tctx(request, current_page="mes"))
+
     @app.get("/mes/etiqueta.pdf")
     def etiqueta_do_lote(request: Request, lote: str):
         # o QR leva direto à genealogia do lote neste mesmo servidor
@@ -85,6 +89,12 @@ def api_paradas(periodo: str = "hoje", inicio: str = "", fim: str = "", maquina_
 def api_oee(periodo: str = "hoje", inicio: str = "", fim: str = "", user: User = Depends(require_user)):
     p = _periodo(periodo, inicio, fim)
     return {"periodo": p, **producao.oee(p["ini_ms"], p["fim_ms"])}
+
+
+@router.get("/api/mes/saude")
+def api_saude(periodo: str = "hoje", inicio: str = "", fim: str = "", user: User = Depends(require_user)):
+    p = _periodo(periodo, inicio, fim)
+    return {"periodo": p, **producao.saude_contagem(p["ini_ms"], p["fim_ms"])}
 
 
 @router.post("/api/mes/paradas/{parada_id}/motivo")
