@@ -640,6 +640,22 @@ Cards em tempo real:
 - **💾 Backup agora** — backup manual do volume
 - **📋 Ver logs** — últimas 200 linhas em terminal escuro
 
+### 🕵️ Auditoria (quem fez o quê)
+
+**Admin → Auditoria.** Registra automaticamente toda ação que altera dados:
+criar/editar/excluir, iniciar/concluir OP, apontar refugo e motivo de parada,
+gravar cartão RFID, mudar legenda, turnos, produtos, usuários e configurações,
+importações e chamadas do ERP pela API (identificadas pelo nome da chave).
+Também entram o login (inclusive tentativas com senha errada) e o logout.
+
+- Cada registro: data/hora, usuário e papel, IP, ação em português, item afetado,
+  campos enviados e o resultado (ok / recusado).
+- **Senhas, chaves e segredos nunca são gravados.**
+- Consultas (abrir telas, ver painéis) não entram.
+- Filtros por usuário, período, texto e "só recusadas"; exportação em CSV.
+- Guardado por 1 ano; o mais antigo é apagado automaticamente.
+- Vale só daqui para frente: ações anteriores à versão 1.8 não foram registradas.
+
 ### 4️⃣ Backups recentes
 
 Lista dos arquivos `.tar.gz` em `/opt/relatorios-iot/backups/` com tamanho e data.

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Auditoria{% endblock %}
+
+{% block content %}
+<div class="mes-wide"></div>
+<div class="page-header">
+  <h1>Auditoria</h1>
+  <p>Quem fez o quê no sistema: toda ação que altera dados, logins e chamadas do ERP. Senhas e chaves nunca são gravadas. O registro é guardado por 1 ano.</p>
+</div>
+
+{% if error %}<div class="card warnings">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" style="display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:flex-end;">
+    <label style="width:180px;">Usuário
+      <select name="usuario">
+        <option value="">Todos</option>
+        {% for u in usuarios %}<option value="{{ u }}" {% if q.get('usuario') == u %}selected{% endif %}>{{ u }}</option>{% endfor %}
+      </select></label>
+    <label style="width:160px;">De<input type="date" name="inicio" value="{{ q.get('inicio', '') }}"></label>
+    <label style="width:160px;">Até<input type="date" name="fim" value="{{ q.get('fim', '') }}"></label>
+    <label style="flex:1; min-width:200px;">Buscar<input name="busca" value="{{ q.get('busca', '') }}" placeholder="ação, OP, código…"></label>
+    <label style="flex-direction:row; align-items:center; gap:6px;"><input type="checkbox" name="falhas" value="1" style="height:auto;" {% if q.get('falhas') == '1' %}checked{% endif %}> Só recusadas</label>
+    <button type="submit" class="btn-primary">Filtrar</button>
+    <a class="btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; height:36px; padding:0 var(--space-4); border:1px solid var(--border-strong); border-radius:var(--radius); color:var(--text);"
+       href="/admin/auditoria.csv?{{ request.url.query }}">Exportar CSV</a>
+  </form>
+</div>
+
+<div class="card">
+  <h2 class="card-titulo">Registros <span class="hint">({{ linhas|length }}{% if linhas|length >= limite %}, mostrando os {{ limite }} mais recentes — use os filtros ou o CSV{% endif %})</span></h2>
+  <div class="table-wrap" style="max-height:640px;">
+    <table class="moldes-table"><thead><tr>
+      <th>Quando</th><th>Usuário</th><th>Ação</th><th>Item</th><th>Detalhe</th><th>Resultado</th><th>IP</th>
+    </tr></thead><tbody>
+    {% for r in linhas %}
+      <tr>
+        <td class="num" style="white-space:nowrap;">{{ r.quando }}</td>
+        <td><strong>{{ r.usuario }}</strong>{% if r.papel %} <span class="chip">{{ r.papel }}</span>{% endif %}</td>
+        <td>{{ r.acao }}</td>
+        <td>{{ r.item }}</td>
+        <td style="max-width:360px; color:var(--text-subtle); font-size:var(--fs-xs); word-break:break-word;">{{ r.detalhe }}</td>
+        <td>{% if r.status >= 400 %}<span class="chip chip-critico">recusado</span>{% else %}<span class="chip">ok</span>{% endif %}</td>
+        <td class="hint">{{ r.ip }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="hint" style="padding:var(--space-5); text-align:center;">Nenhum registro com esses filtros.</td></tr>
+    {% endfor %}
+    </tbody></table>
+  </div>
+</div>
+{% endblock %}

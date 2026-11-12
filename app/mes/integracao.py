@@ -80,6 +80,15 @@ def revogar_chave(chave_id: int) -> None:
         c.execute("UPDATE api_keys SET ativo = 0 WHERE id = ?", (chave_id,))
 
 
+def nome_da_chave(chave: str) -> str | None:
+    """Nome de uma chave ativa, sem registrar uso (para a auditoria)."""
+    if not chave or not chave.startswith(PREFIXO_CHAVE):
+        return None
+    with get_conn() as c:
+        row = c.execute("SELECT nome FROM api_keys WHERE hash = ? AND ativo = 1", (_hash(chave),)).fetchone()
+    return row["nome"] if row else None
+
+
 def validar_chave(chave: str) -> dict | None:
     if not chave or not chave.startswith(PREFIXO_CHAVE):
         return None

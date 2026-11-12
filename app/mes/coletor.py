@@ -97,11 +97,13 @@ class Coletor:
 
     async def _faxina(self) -> None:
         """Tarefas de hora em hora: concluir OPs que não voltaram à máquina."""
-        if time.monotonic() - self._ultima_faxina < FAXINA_A_CADA_S or not config.mes_ativo():
+        if time.monotonic() - self._ultima_faxina < FAXINA_A_CADA_S:
             return
         self._ultima_faxina = time.monotonic()
+        from app import auditoria
+        await asyncio.to_thread(auditoria.limpar_antigos)
         dias = config.get_int("auto_concluir_dias", 0)
-        if dias > 0:
+        if dias > 0 and config.mes_ativo():
             n = await asyncio.to_thread(ordens.encerrar_inativas, dias)
             if n:
                 log.info("%d OP(s) encerrada(s) por inatividade", n)

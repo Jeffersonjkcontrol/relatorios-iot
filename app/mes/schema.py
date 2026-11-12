@@ -386,4 +386,23 @@ CREATE INDEX ix_cartoes_uid ON cartoes_gravados (uid);
 CREATE INDEX ix_cartoes_ts ON cartoes_gravados (ts_ms);
 """
 
-MIGRATIONS: list[str] = [V1, V2, V3]
+# Auditoria: quem fez o quê (app/auditoria.py)
+V4 = """
+CREATE TABLE auditoria (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts_ms INTEGER NOT NULL,
+    usuario TEXT NOT NULL DEFAULT '',      -- login, ou "api:<nome da chave>"
+    papel TEXT NOT NULL DEFAULT '',        -- gestor | operador | api
+    ip TEXT NOT NULL DEFAULT '',
+    metodo TEXT NOT NULL,
+    caminho TEXT NOT NULL,
+    acao TEXT NOT NULL,                    -- descrição em português
+    item TEXT NOT NULL DEFAULT '',         -- id do item afetado (quando há)
+    detalhe TEXT NOT NULL DEFAULT '',      -- campos do formulário (nunca senhas)
+    status INTEGER NOT NULL DEFAULT 0      -- resposta HTTP; >= 400 = não executou
+);
+CREATE INDEX ix_auditoria_ts ON auditoria (ts_ms);
+CREATE INDEX ix_auditoria_usuario ON auditoria (usuario, ts_ms);
+"""
+
+MIGRATIONS: list[str] = [V1, V2, V3, V4]

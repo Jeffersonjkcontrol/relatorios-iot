@@ -144,6 +144,48 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+# ============================================================
+# Auditoria: registra toda requisição que altera algo (quem, o quê, quando)
+# ============================================================
+from app import auditoria  # noqa: E402
+from urllib.parse import parse_qs, urlparse  # noqa: E402
+
+
+def _ip(request: Request) -> str:
+    return request.client.host if request.client else ""
+
+
+@app.middleware("http")
+async def auditoria_middleware(request: Request, call_next):
+    metodo, caminho = request.method, request.url.path
+    if metodo not in auditoria.METODOS or caminho in auditoria.IGNORAR or caminho.startswith("/static/"):
+        return await call_next(request)
+    corpo = await request.body()               # o Starlette guarda o corpo para a rota ler de novo
+    resposta = await call_next(request)
+    try:
+        user = current_user(request)
+        if user:
+            quem, papel = user.username, user.role
+        elif caminho.startswith("/api/v1/"):
+            chave = request.headers.get("x-api-key") or request.headers.get("authorization", "")[7:]
+            quem, papel = "api:" + (mes_integracao.nome_da_chave(chave.strip()) or "chave inválida"), "api"
+        else:
+            quem, papel = "(sem login)", ""
+        acao, item = auditoria.descrever(metodo, caminho)
+        detalhe = auditoria.resumir(corpo, request.headers.get("content-type", ""))
+        status = resposta.status_code
+        # formulários redirecionam com ?error=... quando a ação foi recusada
+        destino = resposta.headers.get("location", "")
+        erro = parse_qs(urlparse(destino).query).get("error", [""])[0] if destino else ""
+        if erro:
+            status = 400
+            detalhe = (detalhe + "; " if detalhe else "") + "recusado: " + erro
+        auditoria.registrar(quem, papel, _ip(request), metodo, caminho, acao, item, detalhe, status)
+    except Exception:
+        pass                                   # a auditoria nunca derruba a operação
+    return resposta
+
+
 @app.get("/maintenance", response_class=HTMLResponse)
 async def page_maintenance(request: Request):
     return templates.TemplateResponse("maintenance.html", {
@@ -164,18 +206,27 @@ async def page_login(request: Request, must_change: int = 0):
     })
 
 
+def _auditar_login(request: Request, usuario: str, papel: str, acao: str, status: int) -> None:
+    try:
+        auditoria.registrar(str(usuario or "")[:60], papel, _ip(request), request.method,
+                            request.url.path, acao, status=status)
+    except Exception:
+        pass
+
+
 @app.post("/login")
 async def do_login(
+    request: Request,
     username: str = Form(...),
     password: str = Form(...),
     next: str = Form("/"),
 ):
     res = get_user_by_username(username)
-    if not res:
+    if not res or not verify_password(password, res[1]):
+        _auditar_login(request, username, "", "Tentativa de login com usuário ou senha errados", 401)
         return RedirectResponse(url="/login?error=Usuário+ou+senha+inválidos", status_code=303)
     user, pwd_hash = res
-    if not verify_password(password, pwd_hash):
-        return RedirectResponse(url="/login?error=Usuário+ou+senha+inválidos", status_code=303)
+    _auditar_login(request, user.username, user.role, "Entrou no sistema", 200)
 
     if user.must_change_password:
         # cria sessão temporária só pra permitir troca de senha
@@ -217,7 +268,10 @@ async def do_change_password(
 
 @app.get("/logout")
 @app.post("/logout")
-async def do_logout():
+async def do_logout(request: Request):
+    user = current_user(request)
+    if user:
+        _auditar_login(request, user.username, user.role, "Saiu do sistema", 200)
     resp = RedirectResponse(url="/login?info=Você+saiu+do+sistema", status_code=303)
     resp.delete_cookie(COOKIE_NAME)
     return resp
@@ -419,6 +473,46 @@ async def admin_ia_save(
     set_oee_targets(oee_targets)
     set_glossary(glossary)
     return RedirectResponse(url="/admin/ia?msg=Conhecimento+atualizado+(novas+conversas+já+usam)", status_code=303)
+
+
+def _filtro_auditoria(request: Request) -> dict:
+    from app.mes import tempo
+    q = request.query_params
+    ini = q.get("inicio") or ""
+    fim = q.get("fim") or ""
+    return {
+        "usuario": q.get("usuario", ""), "busca": q.get("busca", ""), "so_falhas": q.get("falhas") == "1",
+        "ini_ms": tempo.parse_local(ini) if ini else None,
+        "fim_ms": tempo.parse_local(fim) + 86400 * 1000 if fim else None,
+    }
+
+
+@app.get("/admin/auditoria", response_class=HTMLResponse)
+async def page_auditoria(request: Request, user: User = Depends(require_gestor)):
+    from app.mes import tempo
+    try:
+        filtro = _filtro_auditoria(request)
+        erro = None
+    except ValueError as e:
+        filtro, erro = {}, str(e)
+    linhas = auditoria.listar(**filtro) if not erro else []
+    for r in linhas:
+        r["quando"] = tempo.fmt(r["ts_ms"], "%d/%m/%Y %H:%M:%S")
+    return templates.TemplateResponse("admin_auditoria.html", tctx(
+        request, current_page="admin", linhas=linhas, usuarios=auditoria.usuarios(),
+        q=request.query_params, error=erro, limite=500,
+    ))
+
+
+@app.get("/admin/auditoria.csv")
+async def auditoria_csv(request: Request, user: User = Depends(require_gestor)):
+    try:
+        linhas = auditoria.listar(**_filtro_auditoria(request), limite=100_000)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    return Response(content=auditoria.para_csv(linhas), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="auditoria_{stamp}.csv"'})
 
 
 @app.get("/admin/logs", response_class=HTMLResponse)
