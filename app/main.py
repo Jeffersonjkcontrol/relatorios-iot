@@ -181,8 +181,9 @@ async def auditoria_middleware(request: Request, call_next):
             status = 400
             detalhe = (detalhe + "; " if detalhe else "") + "recusado: " + erro
         auditoria.registrar(quem, papel, _ip(request), metodo, caminho, acao, item, detalhe, status)
-    except Exception:
-        pass                                   # a auditoria nunca derruba a operação
+    except Exception:                          # a auditoria nunca derruba a operação,
+        import logging                         # mas a falha fica visível em Admin > Ver logs
+        logging.getLogger("auditoria").exception("Falha ao registrar auditoria de %s %s", metodo, caminho)
     return resposta
 
 
@@ -211,7 +212,8 @@ def _auditar_login(request: Request, usuario: str, papel: str, acao: str, status
         auditoria.registrar(str(usuario or "")[:60], papel, _ip(request), request.method,
                             request.url.path, acao, status=status)
     except Exception:
-        pass
+        import logging
+        logging.getLogger("auditoria").exception("Falha ao registrar auditoria do login")
 
 
 @app.post("/login")
