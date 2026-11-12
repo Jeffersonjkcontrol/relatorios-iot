@@ -37,7 +37,8 @@
     .maq .base { display: flex; justify-content: space-between; align-items: baseline; font-variant-numeric: tabular-nums; }
     .maq .ciclo { font-size: 1.9vw; font-weight: 700; }
     .maq .ciclo small { font-size: .9vw; color: var(--suave); font-weight: 400; }
-    .maq .pecas { font-size: 1.05vw; color: var(--suave); }
+    .maq .pecas { font-size: 1.05vw; color: var(--suave); text-align: right; line-height: 1.25; }
+    .maq .pecas b { color: var(--texto); font-weight: 700; }
     .barra { height: .35vw; background: var(--borda); border-radius: 1vw; overflow: hidden; }
     .barra i { display: block; height: 100%; background: var(--ok); }
     footer { display: flex; justify-content: space-between; font-size: .85vw; color: var(--suave); }
@@ -101,7 +102,7 @@
         <div class="meio">${meio}</div>
         ${op && op.pct != null ? `<div class="barra"><i style="width:${op.pct}%"></i></div>` : ''}
         <div class="base"><span class="ciclo">${m.ciclo_s == null ? '—' : m.ciclo_s.toFixed(1).replace('.', ',')}<small> s</small></span>
-          <span class="pecas">${num(m.pecas_dia)} peças</span></div></div>`;
+          <span class="pecas"><b>${num(m.pecas_dia)}</b> hoje${op ? `<br>OP <b>${num(op.boas)}</b>${op.quantidade ? ' / ' + num(op.quantidade) : ''}` : ''}</span></div></div>`;
     }).join('');
     $('pagina').textContent = paginas > 1 ? `Tela ${pagina + 1} de ${paginas}` : '';
   }
