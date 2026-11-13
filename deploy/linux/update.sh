@@ -15,7 +15,14 @@ set -euo pipefail
 APP_DIR="/opt/relatorios-iot"
 APP_NAME="relatorios-iot"
 IMAGE="${IMAGE:-ghcr.io/jeffersonjkcontrol/relatorios-iot:latest}"
-PORT="${PORT:-8000}"
+# Porta do host: PORT=... explícito > a que já está no docker-compose.yml atual > 8000.
+# (Este script reescreve o compose; sem isso, um mini PC publicado na porta 80
+#  — http://relatorios.local sem porta — voltava para 8000 e saía do ar.)
+PORTA_ATUAL=""
+if [[ -f "$APP_DIR/docker-compose.yml" ]]; then
+    PORTA_ATUAL=$(grep -oE '"?[0-9]+:8000"?' "$APP_DIR/docker-compose.yml" | head -1 | tr -d '"' | cut -d: -f1 || true)
+fi
+PORT="${PORT:-${PORTA_ATUAL:-8000}}"
 
 log()  { echo -e "\n\033[1;34m[*]\033[0m $*"; }
 ok()   { echo -e "\033[1;32m[OK]\033[0m $*"; }
@@ -24,6 +31,7 @@ err()  { echo -e "\033[1;31m[X]\033[0m $*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || err "Execute com sudo"
 [[ -d "$APP_DIR" ]] || err "$APP_DIR não existe. Use install.sh primeiro."
+ok "Porta do app no host: $PORT"
 
 cd "$APP_DIR"
 
