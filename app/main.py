@@ -128,7 +128,7 @@ mes_registrar_paginas(app, templates, tctx)
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    public_paths = {"/login", "/logout", "/change-password", "/maintenance"}
+    public_paths = {"/login", "/logout", "/change-password", "/maintenance", "/favicon.ico"}
     is_static = path.startswith("/static/")
     # /api/v1 é para sistemas externos: não usa sessão, cada rota exige chave de API
     if path in public_paths or is_static or path.startswith("/api/v1/"):
@@ -556,6 +556,13 @@ async def page_admin_logs(request: Request, lines: int = 200, user: User = Depen
     return templates.TemplateResponse("admin_logs.html", tctx(
         request, current_page="admin", logs=logs, lines=lines,
     ))
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    from fastapi.responses import FileResponse
+    return FileResponse(BASE_DIR / "static" / "favicon.svg", media_type="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/", response_class=HTMLResponse)
